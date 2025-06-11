@@ -14,20 +14,68 @@ from open_webui.models.chats import (
 from open_webui.models.tags import TagModel, Tags
 from open_webui.models.folders import Folders
 
-from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
+from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT, ENABLE_PUBLIC_SHARING
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import SRC_LOG_LEVELS
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
 
-from open_webui.utils.auth import get_admin_user, get_verified_user
+from open_webui.utils.auth import get_admin_user, get_verified_user, decode_token, get_current_user_by_api_key
+from open_webui.models.users import Users, UserModel
 from open_webui.utils.access_control import has_permission
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
+
+# Bearer security for optional authentication
+bearer_security = HTTPBearer(auto_error=False)
+
+def get_optional_user(
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    auth_token: HTTPAuthorizationCredentials = Depends(bearer_security),
+) -> Optional[UserModel]:
+    """
+    Get the current user if authenticated, return None if not authenticated.
+    Does not raise exceptions for missing authentication.
+    """
+    token = None
+    
+    # Extract from Authorization header
+    if auth_token is not None:
+        token = auth_token.credentials
+    
+    # Fall back to cookie
+    if token is None and "token" in request.cookies:
+        token = request.cookies.get("token")
+    
+    # Return None if no token found
+    if token is None:
+        return None
+    
+    try:
+        # API key authentication
+        if token.startswith("sk-"):
+            return get_current_user_by_api_key(token)
+        
+        # JWT token authentication  
+        data = decode_token(token)
+        if data is not None and "id" in data:
+            user = Users.get_user_by_id(data["id"])
+            if user and background_tasks:
+                background_tasks.add_task(Users.update_user_last_active_by_id, user.id)
+            return user
+            
+    except Exception:
+        # Return None on any authentication error
+        pass
+    
+    return None
 
 ############################
 # GetChatList
@@ -333,20 +381,43 @@ async def archive_all_chats(user=Depends(get_verified_user)):
 
 
 @router.get("/share/{share_id}", response_model=Optional[ChatResponse])
-async def get_shared_chat_by_id(share_id: str, user=Depends(get_verified_user)):
-    if user.role == "pending":
+async def get_shared_chat_by_id(
+    share_id: str, 
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
+    user: Optional[UserModel] = Depends(get_optional_user)
+):
+    # If public sharing is disabled, require authentication
+    if not ENABLE_PUBLIC_SHARING:
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+            )
+        # Use the original logic for authenticated users
+        if user.role == "pending":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+            )
+
+    # Determine how to fetch the chat based on user status
+    if user is None:
+        # Anonymous access - only allow shared chats
+        chat = Chats.get_chat_by_share_id(share_id)
+    elif user.role == "user" or (user.role == "admin" and not ENABLE_ADMIN_CHAT_ACCESS):
+        # Regular authenticated users
+        chat = Chats.get_chat_by_share_id(share_id)
+    elif user.role == "admin" and ENABLE_ADMIN_CHAT_ACCESS:
+        # Admin users with chat access
+        chat = Chats.get_chat_by_id(share_id)
+    else:
+        # Pending users
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
 
-    if user.role == "user" or (user.role == "admin" and not ENABLE_ADMIN_CHAT_ACCESS):
-        chat = Chats.get_chat_by_share_id(share_id)
-    elif user.role == "admin" and ENABLE_ADMIN_CHAT_ACCESS:
-        chat = Chats.get_chat_by_id(share_id)
-
     if chat:
         return ChatResponse(**chat.model_dump())
-
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND

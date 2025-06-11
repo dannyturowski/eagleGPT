@@ -61,14 +61,23 @@
 	//////////////////////////
 
 	const loadSharedChat = async () => {
-		const userSettings = await getUserSettings(localStorage.token).catch((error) => {
-			console.error(error);
-			return null;
-		});
+		// Check if user is authenticated
+		const token = localStorage.token || null;
+		
+		// Try to get user settings if authenticated
+		if (token) {
+			const userSettings = await getUserSettings(token).catch((error) => {
+				console.error(error);
+				return null;
+			});
 
-		if (userSettings) {
-			settings.set(userSettings.ui);
-		} else {
+			if (userSettings) {
+				settings.set(userSettings.ui);
+			}
+		}
+		
+		// Fall back to localStorage settings for anonymous users
+		if (!token) {
 			let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
 
 			try {
@@ -80,23 +89,35 @@
 			settings.set(localStorageSettings);
 		}
 
-		await models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		// Get models if authenticated, otherwise use empty array
+		if (token) {
+			await models.set(
+				await getModels(
+					token,
+					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+				).catch(() => [])
+			);
+		} else {
+			await models.set([]);
+		}
+		
 		await chatId.set($page.params.id);
-		chat = await getChatByShareId(localStorage.token, $chatId).catch(async (error) => {
+		chat = await getChatByShareId(token, $chatId).catch(async (error) => {
 			await goto('/');
 			return null;
 		});
 
 		if (chat) {
-			user = await getUserById(localStorage.token, chat.user_id).catch((error) => {
-				console.error(error);
-				return null;
-			});
+			// Try to get user details if authenticated, otherwise skip
+			if (token) {
+				user = await getUserById(token, chat.user_id).catch((error) => {
+					console.error(error);
+					return null;
+				});
+			} else {
+				// For anonymous users, create a basic user object or use null
+				user = null;
+			}
 
 			const chatContent = chat.chat;
 
@@ -130,8 +151,16 @@
 
 	const cloneSharedChat = async () => {
 		if (!chat) return;
+		
+		const token = localStorage.token;
+		
+		// Redirect to login if not authenticated
+		if (!token) {
+			goto('/auth');
+			return;
+		}
 
-		const res = await cloneSharedChatById(localStorage.token, chat.id).catch((error) => {
+		const res = await cloneSharedChatById(token, chat.id).catch((error) => {
 			toast.error(`${error}`);
 			return null;
 		});
@@ -203,7 +232,7 @@
 						class="px-4 py-2 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 						on:click={cloneSharedChat}
 					>
-						{$i18n.t('Clone Chat')}
+						{localStorage.token ? $i18n.t('Clone Chat') : $i18n.t('Login to Clone')}
 					</button>
 				</div>
 			</div>

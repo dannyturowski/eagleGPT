@@ -716,6 +716,7 @@ async def get_admin_config(request: Request, user=Depends(get_admin_user)):
         "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
         "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
         "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+        "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
         "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
         "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
         "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
@@ -736,6 +737,7 @@ class AdminConfig(BaseModel):
     DEFAULT_USER_ROLE: str
     JWT_EXPIRES_IN: str
     ENABLE_COMMUNITY_SHARING: bool
+    ENABLE_PUBLIC_SHARING: bool
     ENABLE_MESSAGE_RATING: bool
     ENABLE_CHANNELS: bool
     ENABLE_NOTES: bool
@@ -776,6 +778,7 @@ async def update_admin_config(
     request.app.state.config.ENABLE_COMMUNITY_SHARING = (
         form_data.ENABLE_COMMUNITY_SHARING
     )
+    request.app.state.config.ENABLE_PUBLIC_SHARING = form_data.ENABLE_PUBLIC_SHARING
     request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
 
     request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
@@ -799,6 +802,7 @@ async def update_admin_config(
         "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
         "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
         "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+        "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
         "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
         "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
         "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,

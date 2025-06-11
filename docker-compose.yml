@@ -1,0 +1,18 @@
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    restart: unless-stopped
+    environment:
+      - OWEBUI_SECRET_KEY=${OWEBUI_SECRET_KEY}
+      - OWEBUI_OPENAI_API_KEY=${OPENAI_API_KEY}
+      # etc...
+    volumes:
+      - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
+      - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
+    ports:
+      - "3000:8080"   # host:container
+
+volumes:
+  data:
+  backup:
