@@ -57,9 +57,21 @@
 	let version;
 
 	onMount(async () => {
-		if ($user === undefined || $user === null) {
+		// Allow anonymous access to root page
+		const publicRoutes = ['/', '/s'];
+		const isPublicRoute = publicRoutes.some(route => 
+			$page.url.pathname === route || $page.url.pathname.startsWith('/s/')
+		);
+		
+		// Wait for user store to be initialized before redirecting
+		if ($user === undefined) {
+			// User state not loaded yet, wait
+			await new Promise(resolve => setTimeout(resolve, 100));
+		}
+		
+		if (!isPublicRoute && $user === null) {
 			await goto('/auth');
-		} else if (['user', 'admin'].includes($user?.role)) {
+		} else if ($user && ['user', 'admin'].includes($user?.role)) {
 			try {
 				// Check if IndexedDB exists
 				DB = await openDB('Chats', 1);
@@ -238,6 +250,10 @@
 				}
 			}
 			await tick();
+		} else if ($user === null || $user === undefined) {
+			// Anonymous user - still load the page with minimal data
+			models.set(await getModels(null, false).catch(() => []));
+			banners.set(await getBanners(null).catch(() => []));
 		}
 
 		loaded = true;
