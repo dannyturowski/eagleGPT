@@ -61,6 +61,7 @@
 	import Home from '../icons/Home.svelte';
 	import MagnifyingGlass from '../icons/MagnifyingGlass.svelte';
 	import SearchModal from './SearchModal.svelte';
+	import Footer from './Sidebar/Footer.svelte';
 
 	const BREAKPOINT = 768;
 
@@ -981,6 +982,9 @@
 				{/if}
 			</div>
 		</div>
+
+		<!-- Footer -->
+		<Footer />
 	</div>
 </div>
 
