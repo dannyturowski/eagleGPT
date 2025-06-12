@@ -30,7 +30,25 @@
 		latest: ''
 	};
 
-	let adminConfig = null;
+	let adminConfig = {
+		DEFAULT_USER_ROLE: 'user',
+		ENABLE_SIGNUP: false,
+		SHOW_ADMIN_DETAILS: false,
+		PENDING_USER_OVERLAY_TITLE: '',
+		PENDING_USER_OVERLAY_CONTENT: '',
+		ENABLE_API_KEY: false,
+		ENABLE_API_KEY_ENDPOINT_RESTRICTIONS: false,
+		API_KEY_ALLOWED_ENDPOINTS: '',
+		JWT_EXPIRES_IN: '',
+		ENABLE_COMMUNITY_SHARING: false,
+		ENABLE_PUBLIC_SHARING: false,
+		ENABLE_MESSAGE_RATING: false,
+		ENABLE_NOTES: false,
+		ENABLE_CHANNELS: false,
+		ENABLE_USER_WEBHOOKS: false,
+		RESPONSE_WATERMARK: '',
+		WEBUI_URL: ''
+	};
 	let webhookUrl = '';
 
 	// LDAP
@@ -94,7 +112,8 @@
 
 		await Promise.all([
 			(async () => {
-				adminConfig = await getAdminConfig(localStorage.token);
+				const fetchedConfig = await getAdminConfig(localStorage.token);
+				adminConfig = { ...adminConfig, ...fetchedConfig };
 			})(),
 
 			(async () => {
@@ -117,8 +136,7 @@
 	}}
 >
 	<div class="mt-0.5 space-y-3 overflow-y-scroll scrollbar-hidden h-full">
-		{#if adminConfig !== null}
-			<div class="">
+		<div class="">
 				<div class="mb-3.5">
 					<div class=" mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
 
@@ -708,7 +726,6 @@
 					</div>
 				</div>
 			</div>
-		{/if}
 	</div>
 
 	<div class="flex justify-end pt-3 text-sm font-medium">
