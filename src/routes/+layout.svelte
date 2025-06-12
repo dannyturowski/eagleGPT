@@ -605,9 +605,12 @@
 						await goto(`/auth?redirect=${encodedUrl}`);
 					}
 				} else {
-					// Don't redirect if we're already on the auth page
-					// Needed because we pass in tokens from OAuth logins via URL fragments
-					if ($page.url.pathname !== '/auth') {
+					// Handle welcome page routing
+					if ($page.url.pathname === '/') {
+						// Redirect unauthenticated users to welcome page
+						await goto('/welcome');
+					} else if ($page.url.pathname !== '/auth' && $page.url.pathname !== '/welcome') {
+						// Redirect to auth for all other protected routes
 						await goto(`/auth?redirect=${encodedUrl}`);
 					}
 				}

@@ -1,0 +1,20 @@
+# Simple Dockerfile for eaglegpt - using pre-built OpenWebUI as base
+FROM dyrnq/open-webui:latest
+
+# Copy only our customizations
+COPY ./src/routes/welcome /app/src/routes/welcome
+COPY ./src/lib/components/PreviewChat.svelte /app/src/lib/components/PreviewChat.svelte
+COPY ./src/routes/+layout.svelte /app/src/routes/+layout.svelte
+COPY ./src/lib/components/layout/Sidebar.svelte /app/src/lib/components/layout/Sidebar.svelte
+COPY ./src/lib/components/chat/Chat.svelte /app/src/lib/components/chat/Chat.svelte
+COPY ./src/routes/auth/+page.svelte /app/src/routes/auth/+page.svelte
+
+# Copy static assets if any
+COPY ./static/flag-background-2.png /app/static/flag-background-2.png 2>/dev/null || true
+
+# The base image already has everything built and configured
+# We're just overlaying our custom files
+
+EXPOSE 8080
+
+CMD ["bash", "start.sh"]

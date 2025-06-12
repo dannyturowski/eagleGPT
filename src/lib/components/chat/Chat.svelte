@@ -783,7 +783,7 @@
 		await showArtifacts.set(false);
 
 		if ($page.url.pathname.includes('/c/')) {
-			window.history.replaceState(history.state, '', `/`);
+			window.history.replaceState(history.state, '', `/chat`);
 		}
 
 		autoScroll = true;

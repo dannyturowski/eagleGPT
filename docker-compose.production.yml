@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  eaglegpt:
+    image: eaglegpt:latest
+    container_name: eaglegpt
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - WEBUI_NAME=eagleGPT
+      - WEBUI_URL=http://95.217.152.30:3000
+      - ENABLE_SIGNUP=true
+      # WEBUI_SECRET_KEY should be set in .env file
+    volumes:
+      # IMPORTANT: These are bind mounts to the host filesystem
+      # Data is stored at /opt/openwebui/data on the server
+      - ./data:/app/backend/data
+      - ./backup:/app/backup
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Note: This compose file assumes:
+# 1. You're running from /opt/openwebui directory
+# 2. ./data and ./backup directories exist
+# 3. .env file contains WEBUI_SECRET_KEY
