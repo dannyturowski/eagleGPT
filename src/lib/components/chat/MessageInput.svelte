@@ -720,7 +720,11 @@
 															navigator.maxTouchPoints > 0 ||
 															navigator.msMaxTouchPoints > 0
 														))}
-												placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
+												placeholder={!$_user 
+													? $i18n.t('Sign in to start chatting') 
+													: placeholder 
+													? placeholder 
+													: $i18n.t('Send a Message')}
 												largeTextAsFile={($settings?.largeTextAsFile ?? false) && !shiftKey}
 												autocomplete={$config?.features?.enable_autocomplete_generation &&
 													($settings?.promptAutocomplete ?? false)}
@@ -1503,7 +1507,7 @@
 															? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 															: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 														type="submit"
-														disabled={prompt === '' && files.length === 0}
+														disabled={!$_user || (prompt === '' && files.length === 0)}
 													>
 														<svg
 															xmlns="http://www.w3.org/2000/svg"

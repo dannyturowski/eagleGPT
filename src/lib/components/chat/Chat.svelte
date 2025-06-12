@@ -1440,6 +1440,13 @@
 		parentId: string,
 		{ modelId = null, modelIdx = null, newChat = false } = {}
 	) => {
+		// Check if user is authenticated
+		if (!$user) {
+			toast.info($i18n.t('Please sign in to start chatting'));
+			goto('/auth');
+			return;
+		}
+		
 		if (autoScroll) {
 			scrollToBottom();
 		}
@@ -2054,6 +2061,19 @@
 						shareEnabled={!!history.currentId}
 						{initNewChat}
 					/>
+
+					{#if !$user}
+						<div class="bg-blue-600 text-white py-2 px-4 text-center text-sm">
+							<span class="font-medium">Welcome to eagleGPT!</span>
+							<span class="ml-2">This is a preview mode.</span>
+							<button
+								on:click={() => goto('/auth')}
+								class="ml-4 px-3 py-1 bg-white text-blue-600 text-xs font-semibold rounded-full hover:bg-blue-50 transition-colors"
+							>
+								Sign In to Chat
+							</button>
+						</div>
+					{/if}
 
 					<div class="flex flex-col flex-auto z-10 w-full @container">
 						{#if $settings?.landingPageMode === 'chat' || createMessagesList(history, history.currentId).length > 0}

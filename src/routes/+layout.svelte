@@ -605,14 +605,17 @@
 						await goto(`/auth?redirect=${encodedUrl}`);
 					}
 				} else {
-					// Handle welcome page routing
-					if ($page.url.pathname === '/') {
-						// Redirect unauthenticated users to welcome page
-						await goto('/welcome');
-					} else if ($page.url.pathname !== '/auth' && $page.url.pathname !== '/welcome') {
+					// Allow anonymous access to certain routes
+					const publicRoutes = ['/', '/welcome', '/auth', '/s'];
+					const isPublicRoute = publicRoutes.some(route => 
+						$page.url.pathname === route || $page.url.pathname.startsWith('/s/')
+					);
+					
+					if (!isPublicRoute) {
 						// Redirect to auth for all other protected routes
 						await goto(`/auth?redirect=${encodedUrl}`);
 					}
+					// For anonymous users on /, continue normally without redirect
 				}
 			}
 		} else {
