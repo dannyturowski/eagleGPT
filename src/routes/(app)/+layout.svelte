@@ -284,11 +284,11 @@
 	</div>
 {/if}
 
-{#if $user}
-	<div class="app relative">
-		<div
-			class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 h-screen max-h-[100dvh] overflow-auto flex flex-row justify-end"
-		>
+<div class="app relative">
+	<div
+		class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 h-screen max-h-[100dvh] overflow-auto flex flex-row justify-end"
+	>
+		{#if $user}
 			{#if !['user', 'admin'].includes($user?.role)}
 				<AccountPending />
 			{:else if localDBChats.length > 0}
@@ -345,7 +345,9 @@
 				</div>
 			{/if}
 
-			<Sidebar />
+			{#if $user}
+				<Sidebar />
+			{/if}
 
 			{#if loaded}
 				<slot />
@@ -354,9 +356,9 @@
 					<Spinner />
 				</div>
 			{/if}
-		</div>
+		{/if}
 	</div>
-{/if}
+</div>
 
 <style>
 	.loading {
