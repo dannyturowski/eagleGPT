@@ -220,6 +220,32 @@ def get_current_user(
         )
 
     if data is not None and "id" in data:
+        # Check if this is a demo token
+        if data.get("is_demo", False):
+            # Create a virtual demo user (not from DB)
+            from open_webui.models.users import UserModel
+            from open_webui.demo_auth_data import get_demo_user
+            
+            session_id = data.get("session_id", "default")
+            demo_user_data = get_demo_user(session_id)
+            
+            user = UserModel(
+                id=demo_user_data["id"],
+                email=demo_user_data["email"],
+                name=demo_user_data["name"],
+                role=demo_user_data["role"],
+                profile_image_url=demo_user_data["profile_image_url"],
+                is_active=True,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+                last_active_at=datetime.now(UTC),
+            )
+            # Mark as demo user
+            user.is_demo = True
+            # Add demo permissions
+            user.permissions = demo_user_data["permissions"]
+            return user
+        
         user = Users.get_user_by_id(data["id"])
         if user is None:
             raise HTTPException(

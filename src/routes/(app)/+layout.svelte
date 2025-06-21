@@ -47,6 +47,7 @@
 	import UpdateInfoToast from '$lib/components/layout/UpdateInfoToast.svelte';
 	import { get } from 'svelte/store';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import DemoBanner from '$lib/components/layout/DemoBanner.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -57,19 +58,13 @@
 	let version;
 
 	onMount(async () => {
-		// Allow anonymous access to root page
-		const publicRoutes = ['/', '/s'];
-		const isPublicRoute = publicRoutes.some(route => 
-			$page.url.pathname === route || $page.url.pathname.startsWith('/s/')
-		);
-		
 		// Wait for user store to be initialized before redirecting
 		if ($user === undefined) {
 			// User state not loaded yet, wait
 			await new Promise(resolve => setTimeout(resolve, 100));
 		}
 		
-		if (!isPublicRoute && $user === null) {
+		if ($user === null) {
 			await goto('/auth');
 		} else if ($user && ['user', 'admin'].includes($user?.role)) {
 			try {
@@ -250,10 +245,6 @@
 				}
 			}
 			await tick();
-		} else if ($user === null || $user === undefined) {
-			// Anonymous user - still load the page with minimal data
-			models.set(await getModels(null, false).catch(() => []));
-			banners.set(await getBanners(null).catch(() => []));
 		}
 
 		loaded = true;
@@ -285,13 +276,14 @@
 {/if}
 
 <div class="app relative">
+	<DemoBanner />
 	<div
 		class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-900 h-screen max-h-[100dvh] overflow-auto flex flex-row justify-end"
 	>
-		{#if $user}
-			{#if !['user', 'admin'].includes($user?.role)}
-				<AccountPending />
-			{:else if localDBChats.length > 0}
+		{#if $user && !['user', 'admin'].includes($user?.role)}
+			<AccountPending />
+		{:else}
+			{#if $user && localDBChats.length > 0}
 				<div class="fixed w-full h-full flex z-50">
 					<div
 						class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"

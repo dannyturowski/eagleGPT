@@ -43,6 +43,7 @@
 	} from '$lib/apis/chats';
 	import { createNewFolder, getFolders, updateFolderParentIdById } from '$lib/apis/folders';
 	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { checkDemoRestriction } from '$lib/utils/demo';
 
 	import ArchivedChatsModal from './ArchivedChatsModal.svelte';
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -489,7 +490,11 @@
 				class="flex justify-between items-center flex-1 rounded-lg px-2 py-1 h-full text-right hover:bg-gray-100 dark:hover:bg-gray-900 transition no-drag-region"
 				href="/"
 				draggable="false"
-				on:click={async () => {
+				on:click={async (e) => {
+					if (checkDemoRestriction('create new chats')) {
+						e.preventDefault();
+						return;
+					}
 					selectedChatId = null;
 					await goto('/chat');
 					const newChatButton = document.getElementById('new-chat-button');

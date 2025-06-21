@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from open_webui.utils.auth import get_admin_user, get_verified_user, decode_token, get_current_user_by_api_key
 from open_webui.models.users import Users, UserModel
 from open_webui.utils.access_control import has_permission
+from open_webui.utils.demo_data import DemoDataManager
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -87,6 +88,20 @@ def get_optional_user(
 async def get_session_user_chat_list(
     user=Depends(get_verified_user), page: Optional[int] = None
 ):
+    # Check if this is a demo user
+    if DemoDataManager.is_demo_user(user):
+        demo_chats = DemoDataManager.get_demo_chats(user.id)
+        # Convert to ChatTitleIdResponse format
+        chat_list = []
+        for chat in demo_chats:
+            chat_list.append(ChatTitleIdResponse(
+                id=chat["id"],
+                title=chat["title"],
+                updated_at=chat["updated_at"],
+                created_at=chat["created_at"]
+            ))
+        return chat_list
+    
     if page is not None:
         limit = 60
         skip = (page - 1) * limit
@@ -103,6 +118,12 @@ async def get_session_user_chat_list(
 
 @router.delete("/", response_model=bool)
 async def delete_all_user_chats(request: Request, user=Depends(get_verified_user)):
+    # Block demo users from deleting
+    if DemoDataManager.is_demo_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo users cannot delete chats. Please sign up for a full account."
+        )
 
     if user.role == "user" and not has_permission(
         user.id, "chat.delete", request.app.state.config.USER_PERMISSIONS
@@ -162,6 +183,13 @@ async def get_user_chat_list_by_user_id(
 
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
+    # Block demo users from creating new chats
+    if DemoDataManager.is_demo_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo users cannot create new chats. Please sign up for a full account."
+        )
+    
     try:
         chat = Chats.insert_new_chat(user.id, form_data)
         return ChatResponse(**chat.model_dump())
@@ -458,6 +486,16 @@ async def get_user_chat_list_by_tag_name(
 
 @router.get("/{id}", response_model=Optional[ChatResponse])
 async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
+    # Check if this is a demo user
+    if DemoDataManager.is_demo_user(user):
+        demo_chat = DemoDataManager.get_demo_chat_by_id(id, user.id)
+        if demo_chat:
+            return ChatResponse(**demo_chat)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
+            )
+    
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
     if chat:
@@ -478,6 +516,13 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
 async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
+    # Block demo users from updating
+    if DemoDataManager.is_demo_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo users cannot modify chats. Please sign up for a full account."
+        )
+    
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
         updated_chat = {**chat.chat, **form_data.chat}

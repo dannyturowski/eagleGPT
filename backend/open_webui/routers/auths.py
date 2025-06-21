@@ -50,6 +50,7 @@ from open_webui.utils.auth import (
 )
 from open_webui.utils.webhook import post_webhook
 from open_webui.utils.access_control import get_permissions
+from open_webui.demo_auth_data import get_demo_user
 
 from typing import Optional, List
 
@@ -355,6 +356,96 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
 
 
 ############################
+# Demo Access
+############################
+
+
+@router.post("/demo", response_model=SessionUserResponse)
+async def demo_access(request: Request, response: Response):
+    """
+    Create a demo session for anonymous users with read-only access.
+    Returns a special demo token that provides limited access.
+    """
+    # Check if demo mode is enabled
+    if not request.app.state.config.ENABLE_DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo mode is not enabled"
+        )
+    
+    # Create a special demo user ID (not stored in DB)
+    demo_user_id = f"demo_{uuid.uuid4().hex[:8]}"
+    
+    # Create a demo token with special marker
+    expires_delta = parse_duration(request.app.state.config.JWT_EXPIRES_IN)
+    expires_at = None
+    if expires_delta:
+        expires_at = int(time.time()) + int(expires_delta.total_seconds())
+    
+    token = create_token(
+        data={
+            "id": demo_user_id,
+            "is_demo": True,  # Special marker for demo users
+            "demo_session": str(uuid.uuid4())  # Unique session ID
+        },
+        expires_delta=expires_delta,
+    )
+    
+    # Set the cookie token
+    response.set_cookie(
+        key="token",
+        value=token,
+        expires=(
+            datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+            if expires_at
+            else None
+        ),
+        httponly=True,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+    
+    # Return demo user data
+    demo_user = {
+        "id": demo_user_id,
+        "email": "demo@eaglegpt.us",
+        "name": "Demo User",
+        "role": "user",
+        "profile_image_url": "/assets/eagleGPT-1.png",
+    }
+    
+    # Demo users have limited permissions
+    demo_permissions = {
+        "chat": {
+            "create": False,
+            "read": True,
+            "update": False,
+            "delete": False,
+            "share": False,
+            "temporary": False
+        },
+        "workspace": {
+            "models": False,
+            "knowledge": False,
+            "prompts": False,
+            "tools": False,
+            "actions": False
+        },
+        "user": {
+            "settings": False
+        }
+    }
+    
+    return {
+        "token": token,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+        **demo_user,
+        "permissions": demo_permissions,
+    }
+
+
+############################
 # SignIn
 ############################
 
@@ -453,6 +544,75 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
         }
     else:
         raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
+
+
+############################
+# Demo Mode Authentication
+############################
+
+
+@router.post("/demo", response_model=SessionUserResponse)
+async def demo_auth(request: Request, response: Response):
+    """
+    Generate a demo token for anonymous users to browse the interface.
+    Demo users have read-only access to pre-populated content.
+    """
+    # Check if demo mode is enabled
+    if not request.app.state.config.ENABLE_DEMO_MODE:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, 
+            detail="Demo mode is not enabled"
+        )
+    
+    # Generate a unique session ID for this demo user
+    session_id = str(uuid.uuid4())
+    
+    # Create demo user object
+    demo_user = get_demo_user(session_id)
+    
+    # Generate token with demo flag
+    expires_delta = parse_duration(request.app.state.config.DEMO_TOKEN_EXPIRY or "24h")
+    expires_at = None
+    if expires_delta:
+        expires_at = int(time.time()) + int(expires_delta.total_seconds())
+    
+    token = create_token(
+        data={
+            "id": demo_user["id"],
+            "is_demo": True,
+            "session_id": session_id
+        },
+        expires_delta=expires_delta,
+    )
+    
+    datetime_expires_at = (
+        datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc)
+        if expires_at
+        else None
+    )
+    
+    # Set the cookie token
+    response.set_cookie(
+        key="token",
+        value=token,
+        expires=datetime_expires_at,
+        httponly=True,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+    
+    return {
+        "token": token,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+        "id": demo_user["id"],
+        "email": demo_user["email"],
+        "name": demo_user["name"],
+        "role": demo_user["role"],
+        "profile_image_url": demo_user["profile_image_url"],
+        "permissions": demo_user["permissions"],
+        "is_demo": True
+    }
 
 
 ############################
@@ -706,31 +866,38 @@ async def get_admin_details(request: Request, user=Depends(get_current_user)):
 
 @router.get("/admin/config")
 async def get_admin_config(request: Request, user=Depends(get_admin_user)):
-    return {
-        "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
-        "WEBUI_URL": request.app.state.config.WEBUI_URL,
-        "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
-        "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
-        "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
-        "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
-        "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
-        "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
-        "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
-        "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
-        "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
-        "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
-        "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
-        "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
-        "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-        "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-        "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
-    }
+    try:
+        return {
+            "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
+            "WEBUI_URL": request.app.state.config.WEBUI_URL,
+            "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
+            "ENABLE_DEMO_MODE": request.app.state.config.ENABLE_DEMO_MODE,
+            "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
+            "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
+            "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
+            "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
+            "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
+            "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+            "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
+            "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
+            "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
+            "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
+            "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+            "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
+            "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
+            "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
+        }
+    except Exception as e:
+        log.error(f"Error getting admin config: {str(e)}")
+        log.error(f"Available configs: {request.app.state.config.list_configs()}")
+        raise HTTPException(500, detail=f"Failed to get configuration: {str(e)}")
 
 
 class AdminConfig(BaseModel):
     SHOW_ADMIN_DETAILS: bool
     WEBUI_URL: str
     ENABLE_SIGNUP: bool
+    ENABLE_DEMO_MODE: bool
     ENABLE_API_KEY: bool
     ENABLE_API_KEY_ENDPOINT_RESTRICTIONS: bool
     API_KEY_ALLOWED_ENDPOINTS: str
@@ -751,66 +918,72 @@ class AdminConfig(BaseModel):
 async def update_admin_config(
     request: Request, form_data: AdminConfig, user=Depends(get_admin_user)
 ):
-    request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
-    request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
-    request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
+    try:
+        request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
+        request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
+        request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
+        request.app.state.config.ENABLE_DEMO_MODE = form_data.ENABLE_DEMO_MODE
 
-    request.app.state.config.ENABLE_API_KEY = form_data.ENABLE_API_KEY
-    request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS = (
-        form_data.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS
-    )
-    request.app.state.config.API_KEY_ALLOWED_ENDPOINTS = (
-        form_data.API_KEY_ALLOWED_ENDPOINTS
-    )
+        request.app.state.config.ENABLE_API_KEY = form_data.ENABLE_API_KEY
+        request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS = (
+            form_data.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS
+        )
+        request.app.state.config.API_KEY_ALLOWED_ENDPOINTS = (
+            form_data.API_KEY_ALLOWED_ENDPOINTS
+        )
 
-    request.app.state.config.ENABLE_CHANNELS = form_data.ENABLE_CHANNELS
-    request.app.state.config.ENABLE_NOTES = form_data.ENABLE_NOTES
+        request.app.state.config.ENABLE_CHANNELS = form_data.ENABLE_CHANNELS
+        request.app.state.config.ENABLE_NOTES = form_data.ENABLE_NOTES
 
-    if form_data.DEFAULT_USER_ROLE in ["pending", "user", "admin"]:
-        request.app.state.config.DEFAULT_USER_ROLE = form_data.DEFAULT_USER_ROLE
+        if form_data.DEFAULT_USER_ROLE in ["pending", "user", "admin"]:
+            request.app.state.config.DEFAULT_USER_ROLE = form_data.DEFAULT_USER_ROLE
 
-    pattern = r"^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$"
+        pattern = r"^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$"
 
-    # Check if the input string matches the pattern
-    if re.match(pattern, form_data.JWT_EXPIRES_IN):
-        request.app.state.config.JWT_EXPIRES_IN = form_data.JWT_EXPIRES_IN
+        # Check if the input string matches the pattern
+        if re.match(pattern, form_data.JWT_EXPIRES_IN):
+            request.app.state.config.JWT_EXPIRES_IN = form_data.JWT_EXPIRES_IN
 
-    request.app.state.config.ENABLE_COMMUNITY_SHARING = (
-        form_data.ENABLE_COMMUNITY_SHARING
-    )
-    request.app.state.config.ENABLE_PUBLIC_SHARING = form_data.ENABLE_PUBLIC_SHARING
-    request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
+        request.app.state.config.ENABLE_COMMUNITY_SHARING = (
+            form_data.ENABLE_COMMUNITY_SHARING
+        )
+        request.app.state.config.ENABLE_PUBLIC_SHARING = form_data.ENABLE_PUBLIC_SHARING
+        request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
 
-    request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
+        request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
 
-    request.app.state.config.PENDING_USER_OVERLAY_TITLE = (
-        form_data.PENDING_USER_OVERLAY_TITLE
-    )
-    request.app.state.config.PENDING_USER_OVERLAY_CONTENT = (
-        form_data.PENDING_USER_OVERLAY_CONTENT
-    )
+        request.app.state.config.PENDING_USER_OVERLAY_TITLE = (
+            form_data.PENDING_USER_OVERLAY_TITLE
+        )
+        request.app.state.config.PENDING_USER_OVERLAY_CONTENT = (
+            form_data.PENDING_USER_OVERLAY_CONTENT
+        )
 
-    request.app.state.config.RESPONSE_WATERMARK = form_data.RESPONSE_WATERMARK
+        request.app.state.config.RESPONSE_WATERMARK = form_data.RESPONSE_WATERMARK
 
-    return {
-        "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
-        "WEBUI_URL": request.app.state.config.WEBUI_URL,
-        "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
-        "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
-        "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
-        "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
-        "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
-        "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
-        "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
-        "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
-        "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
-        "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
-        "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
-        "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
-        "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-        "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-        "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
-    }
+        return {
+            "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
+            "WEBUI_URL": request.app.state.config.WEBUI_URL,
+            "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
+            "ENABLE_DEMO_MODE": request.app.state.config.ENABLE_DEMO_MODE,
+            "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
+            "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
+            "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
+            "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
+            "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
+            "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+            "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
+            "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
+            "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
+            "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
+            "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+            "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
+            "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
+            "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
+        }
+    except Exception as e:
+        log.error(f"Error updating admin config: {str(e)}")
+        raise HTTPException(500, detail=f"Failed to update configuration: {str(e)}")
 
 
 class LdapServerConfig(BaseModel):

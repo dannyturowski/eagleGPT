@@ -34,6 +34,7 @@
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
+	import { checkDemoRestriction } from '$lib/utils/demo';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -601,6 +602,10 @@
 						<form
 							class="w-full flex flex-col gap-1.5"
 							on:submit|preventDefault={() => {
+								// Check if demo user
+								if (checkDemoRestriction('send messages')) {
+									return;
+								}
 								// check if selectedModels support image input
 								dispatch('submit', prompt);
 							}}
@@ -765,6 +770,9 @@
 													// Command/Ctrl + Shift + Enter to submit a message pair
 													if (isCtrlPressed && e.key === 'Enter' && e.shiftKey) {
 														e.preventDefault();
+														if (checkDemoRestriction('send messages')) {
+															return;
+														}
 														createMessagePair(prompt);
 													}
 
@@ -949,6 +957,9 @@
 												// Command/Ctrl + Shift + Enter to submit a message pair
 												if (isCtrlPressed && e.key === 'Enter' && e.shiftKey) {
 													e.preventDefault();
+													if (checkDemoRestriction('send messages')) {
+														return;
+													}
 													createMessagePair(prompt);
 												}
 

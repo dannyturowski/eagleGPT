@@ -83,16 +83,24 @@ def load_json_config():
 
 
 def save_to_db(data):
-    with get_db() as db:
-        existing_config = db.query(Config).first()
-        if not existing_config:
-            new_config = Config(data=data, version=0)
-            db.add(new_config)
-        else:
-            existing_config.data = data
-            existing_config.updated_at = datetime.now()
-            db.add(existing_config)
-        db.commit()
+    try:
+        with get_db() as db:
+            existing_config = db.query(Config).first()
+            if not existing_config:
+                new_config = Config(data=data, version=0)
+                db.add(new_config)
+                log.info("Creating new config entry in database")
+            else:
+                existing_config.data = data
+                existing_config.updated_at = datetime.now()
+                db.add(existing_config)
+                log.info("Updating existing config entry in database")
+            db.commit()
+            log.info("Config saved to database successfully")
+    except Exception as e:
+        log.error(f"Failed to save config to database: {str(e)}")
+        log.error(f"Config data that failed to save: {json.dumps(data, indent=2)}")
+        raise
 
 
 def reset_config():
@@ -197,15 +205,19 @@ class PersistentConfig(Generic[T]):
 
     def save(self):
         log.info(f"Saving '{self.env_name}' to the database")
-        path_parts = self.config_path.split(".")
-        sub_config = CONFIG_DATA
-        for key in path_parts[:-1]:
-            if key not in sub_config:
-                sub_config[key] = {}
-            sub_config = sub_config[key]
-        sub_config[path_parts[-1]] = self.value
-        save_to_db(CONFIG_DATA)
-        self.config_value = self.value
+        try:
+            path_parts = self.config_path.split(".")
+            sub_config = CONFIG_DATA
+            for key in path_parts[:-1]:
+                if key not in sub_config:
+                    sub_config[key] = {}
+                sub_config = sub_config[key]
+            sub_config[path_parts[-1]] = self.value
+            save_to_db(CONFIG_DATA)
+            self.config_value = self.value
+        except Exception as e:
+            log.error(f"Failed to save config '{self.env_name}': {str(e)}")
+            raise
 
 
 class AppConfig:
@@ -226,15 +238,23 @@ class AppConfig:
         if isinstance(value, PersistentConfig):
             self._state[key] = value
         else:
-            self._state[key].value = value
-            self._state[key].save()
+            if key not in self._state:
+                log.error(f"Attempted to set unknown config key '{key}' with value '{value}'")
+                raise AttributeError(f"Config key '{key}' not found. Cannot update non-existent config.")
+            try:
+                self._state[key].value = value
+                self._state[key].save()
 
-            if self._redis:
-                redis_key = f"open-webui:config:{key}"
-                self._redis.set(redis_key, json.dumps(self._state[key].value))
+                if self._redis:
+                    redis_key = f"open-webui:config:{key}"
+                    self._redis.set(redis_key, json.dumps(self._state[key].value))
+            except Exception as e:
+                log.error(f"Error saving config key '{key}': {str(e)}")
+                raise
 
     def __getattr__(self, key):
         if key not in self._state:
+            log.warning(f"Config key '{key}' not found in state. Available keys: {list(self._state.keys())}")
             raise AttributeError(f"Config key '{key}' not found")
 
         # If Redis is available, check for an updated value
@@ -255,6 +275,10 @@ class AppConfig:
                     log.error(f"Invalid JSON format in Redis for {key}: {redis_value}")
 
         return self._state[key].value
+    
+    def list_configs(self):
+        """Debug method to list all registered configs"""
+        return list(self._state.keys())
 
 
 ####################################
@@ -932,6 +956,18 @@ ENABLE_SIGNUP = PersistentConfig(
     ),
 )
 
+ENABLE_DEMO_MODE = PersistentConfig(
+    "ENABLE_DEMO_MODE",
+    "ui.enable_demo_mode",
+    os.environ.get("ENABLE_DEMO_MODE", "False").lower() == "true",
+)
+
+DEMO_TOKEN_EXPIRY = PersistentConfig(
+    "DEMO_TOKEN_EXPIRY",
+    "ui.demo_token_expiry",
+    os.environ.get("DEMO_TOKEN_EXPIRY", "24h"),
+)
+
 ENABLE_LOGIN_FORM = PersistentConfig(
     "ENABLE_LOGIN_FORM",
     "ui.ENABLE_LOGIN_FORM",
@@ -1241,7 +1277,7 @@ ENABLE_COMMUNITY_SHARING = PersistentConfig(
 ENABLE_PUBLIC_SHARING = PersistentConfig(
     "ENABLE_PUBLIC_SHARING",
     "ui.enable_public_sharing",
-    os.environ.get("ENABLE_PUBLIC_SHARING", "False").lower() == "true",
+    os.environ.get("ENABLE_PUBLIC_SHARING", "True").lower() == "true",
 )
 
 ENABLE_MESSAGE_RATING = PersistentConfig(

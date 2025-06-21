@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    container_name: eaglegpt_pipelines
+    restart: unless-stopped
+    ports:
+      - "9099:9099"
+    environment:
+      # Rate limiting defaults
+      RATE_LIMIT_PER_MINUTE: "10"
+      RATE_LIMIT_PER_HOUR: "50"
+      RATE_LIMIT_SLIDING_WINDOW: "100"
+      RATE_LIMIT_SLIDING_WINDOW_MINUTES: "180"
+      
+      # Enable Redis
+      ENABLE_REDIS: "true"
+      REDIS_URL: "redis://redis:6379/0"
+    volumes:
+      - ./pipelines:/app/pipelines
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - eaglegpt-network
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    container_name: eaglegpt_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - eaglegpt-network
+
+networks:
+  eaglegpt-network:
+    external: true
+
+volumes:
+  redis_data:
