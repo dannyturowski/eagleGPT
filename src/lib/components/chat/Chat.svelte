@@ -1334,7 +1334,7 @@
 	const submitPrompt = async (userPrompt, { _raw = false } = {}) => {
 		console.log('submitPrompt', userPrompt, $chatId);
 
-		// Check demo restrictions
+		// Check demo restrictions before doing anything
 		if (checkDemoRestriction('send messages')) {
 			return;
 		}
@@ -1506,7 +1506,13 @@
 
 		// Create new chat if newChat is true and first user message
 		if (newChat && _history.messages[_history.currentId].parentId === null) {
-			_chatId = await initChatHandler(_history);
+			try {
+				_chatId = await initChatHandler(_history);
+			} catch (error) {
+				// If demo user, the error is expected, just return
+				console.log('Chat creation blocked:', error.message);
+				return;
+			}
 		}
 
 		await tick();
@@ -1949,6 +1955,11 @@
 
 	const initChatHandler = async (history) => {
 		let _chatId = $chatId;
+
+		// Check if demo user is trying to create a new chat
+		if (checkDemoRestriction('create new chats')) {
+			throw new Error('Demo users cannot create new chats');
+		}
 
 		if (!$temporaryChatEnabled) {
 			chat = await createNewChat(localStorage.token, {
