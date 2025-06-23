@@ -37,10 +37,16 @@
             localStorage.setItem('token', data.token);
             localStorage.setItem('demo_session', 'true');
             
-            // Store user data if provided
-            if (data.user) {
-                localStorage.setItem('user', JSON.stringify(data.user));
-            }
+            // Store user data if provided (from the response, not the nested user object)
+            const userData = {
+                id: data.id,
+                email: data.email,
+                name: data.name,
+                role: data.role,
+                profile_image_url: data.profile_image_url,
+                permissions: data.permissions
+            };
+            localStorage.setItem('user', JSON.stringify(userData));
             
             // Remove the attempt timestamp on success
             localStorage.removeItem('demo_login_attempt');

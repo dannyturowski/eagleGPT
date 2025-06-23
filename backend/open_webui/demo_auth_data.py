@@ -201,7 +201,7 @@ def get_demo_user(session_id: str):
         "email": f"demo_{session_id}@eaglegpt.us",
         "name": "Demo User",
         "role": "user",
-        "profile_image_url": "/static/favicon.png",
+        "profile_image_url": "/assets/eagleGPT-1.png",
         "is_demo": True,
         "created_at": datetime.now(timezone.utc).timestamp(),
         "updated_at": datetime.now(timezone.utc).timestamp(),
