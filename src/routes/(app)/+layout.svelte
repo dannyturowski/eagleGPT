@@ -64,9 +64,8 @@
 			await new Promise(resolve => setTimeout(resolve, 100));
 		}
 		
-		if ($user === null) {
-			await goto('/auth');
-		} else if ($user && ['user', 'admin'].includes($user?.role)) {
+		// Allow anonymous users to stay on the page
+		if ($user && ['user', 'admin'].includes($user?.role)) {
 			try {
 				// Check if IndexedDB exists
 				DB = await openDB('Chats', 1);
