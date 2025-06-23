@@ -1131,3 +1131,54 @@ async def get_api_key(user=Depends(get_current_user)):
         }
     else:
         raise HTTPException(404, detail=ERROR_MESSAGES.API_KEY_NOT_FOUND)
+
+
+############################
+# Demo Authentication
+############################
+
+@router.post("/demo", response_model=SessionUserResponse)
+async def demo_auth(request: Request, response: Response):
+    """Generate a demo token for anonymous users to browse the interface."""
+    if not request.app.state.config.ENABLE_DEMO_MODE:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demo mode is not enabled")
+    
+    # Generate a unique session ID for this demo user
+    session_id = str(uuid.uuid4())
+    
+    # Import demo data
+    from open_webui.demo_auth_data import get_demo_user
+    demo_user_data = get_demo_user(session_id)
+    
+    # Create demo token with session ID
+    token = create_token(
+        data={
+            "id": demo_user_data["id"],
+            "is_demo": True,
+            "session_id": session_id
+        },
+        expires_delta=timedelta(hours=2)  # Demo sessions expire after 2 hours
+    )
+    
+    expires_at = int((datetime.now(UTC) + timedelta(hours=2)).timestamp())
+    
+    response.set_cookie(
+        key="token",
+        value=token,
+        max_age=60 * 60 * 2,  # 2 hours
+        httponly=True,
+        samesite=WEBUI_SESSION_COOKIE_SAME_SITE,
+        secure=WEBUI_SESSION_COOKIE_SECURE,
+    )
+    
+    return {
+        "token": token,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+        "id": demo_user_data["id"],
+        "email": demo_user_data["email"],
+        "name": demo_user_data["name"],
+        "role": demo_user_data["role"],
+        "profile_image_url": demo_user_data["profile_image_url"],
+        "permissions": demo_user_data["permissions"]
+    }
