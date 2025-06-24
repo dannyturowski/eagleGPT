@@ -37,14 +37,14 @@
             localStorage.setItem('token', data.token);
             localStorage.setItem('demo_session', 'true');
             
-            // Store user data if provided (from the response, not the nested user object)
+            // Store user data with demo flag
             const userData = {
                 id: data.id,
                 email: data.email,
                 name: data.name,
                 role: data.role,
                 profile_image_url: data.profile_image_url,
-                permissions: data.permissions
+                info: data.info || { is_demo: true }
             };
             localStorage.setItem('user', JSON.stringify(userData));
             

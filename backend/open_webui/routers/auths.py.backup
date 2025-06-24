@@ -2,7 +2,6 @@ import re
 import uuid
 import time
 import datetime
-from datetime import timedelta
 import logging
 from aiohttp import ClientSession
 
@@ -51,7 +50,7 @@ from open_webui.utils.auth import (
 )
 from open_webui.utils.webhook import post_webhook
 from open_webui.utils.access_control import get_permissions
-# from open_webui.demo_auth_data import get_demo_user  # Removed - using shared demo user
+from open_webui.demo_auth_data import get_demo_user
 
 from typing import Optional, List
 
@@ -374,6 +373,7 @@ async def demo_access(request: Request, response: Response):
             detail="Demo mode is not enabled"
         )
     
+    # Import demo helper functions
     try:
         from open_webui.models.chats import Chats, ChatImportForm
         import json
@@ -389,12 +389,12 @@ async def demo_access(request: Request, response: Response):
         
         if not demo_user:
             # Create the shared demo user (only happens once)
-            # First create the user
             demo_user = Users.insert_new_user(
                 id=DEMO_USER_ID,
                 name=DEMO_NAME,
                 email=DEMO_EMAIL,
-                profile_image_url="/static/user.png",
+                password=get_password_hash(uuid.uuid4().hex),  # Random password
+                profile_image_url="/user.png",
                 role="user"
             )
             
@@ -456,7 +456,7 @@ async def demo_access(request: Request, response: Response):
             secure=WEBUI_AUTH_COOKIE_SECURE,
         )
         
-        # Return user data with demo flag in info
+        # Return user data
         return SessionUserResponse(
             token=token,
             token_type="Bearer",
@@ -580,6 +580,30 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
 
 
 # Duplicate demo endpoint removed - see line 363 for the main implementation
+    )
+    
+    # Set the cookie token
+    response.set_cookie(
+        key="token",
+        value=token,
+        expires=datetime_expires_at,
+        httponly=True,
+        samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
+        secure=WEBUI_AUTH_COOKIE_SECURE,
+    )
+    
+    return {
+        "token": token,
+        "token_type": "Bearer",
+        "expires_at": expires_at,
+        "id": demo_user["id"],
+        "email": demo_user["email"],
+        "name": demo_user["name"],
+        "role": demo_user["role"],
+        "profile_image_url": demo_user["profile_image_url"],
+        "permissions": demo_user["permissions"],
+        "is_demo": True
+    }
 
 
 ############################
@@ -1114,8 +1138,8 @@ async def demo_auth(request: Request, response: Response):
     session_id = str(uuid.uuid4())
     
     # Import demo data
-    # from open_webui.demo_auth_data import get_demo_user  # Removed - using shared demo user
-    demo_user_data = get_demo_user(session_id)
+    from open_webui.demo_auth_data import get_demo_user
+    demo_user_data = get_demo_user(session_id[:8])  # Use shorter ID for readability
     
     # Create demo token with session ID
     token = create_token(

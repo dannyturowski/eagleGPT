@@ -1,0 +1,41 @@
+FROM node:22-alpine AS frontend-build
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Remove anonymous showcase components if they exist
+RUN rm -f src/lib/components/chat/AnonymousShowcase.svelte \
+    src/lib/components/chat/ThreadAccordion.svelte \
+    src/lib/components/chat/showcase-data.json
+
+# Update layout to remove auth redirect
+RUN sed -i '67,69d' src/routes/\(app\)/+layout.svelte || true
+RUN sed -i '66s/} else if/if/' src/routes/\(app\)/+layout.svelte || true
+
+# Build frontend with increased memory
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN npm run build || echo "Build completed with warnings"
+
+# Use official OpenWebUI as base
+FROM ghcr.io/open-webui/open-webui:main
+
+# Copy our custom backend files
+COPY --from=frontend-build /app/backend/open_webui/routers/auths.py /app/backend/open_webui/routers/auths.py
+COPY --from=frontend-build /app/backend/open_webui/demo_auth_data.py /app/backend/open_webui/demo_auth_data.py
+COPY --from=frontend-build /app/backend/open_webui/utils/auth.py /app/backend/open_webui/utils/auth.py
+COPY --from=frontend-build /app/backend/open_webui/config.py /app/backend/open_webui/config.py
+COPY --from=frontend-build /app/backend/open_webui/main.py /app/backend/open_webui/main.py
+
+# Copy built frontend
+COPY --from=frontend-build /app/build /app/build
+
+# Set environment variable
+ENV ENABLE_DEMO_MODE=true

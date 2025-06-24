@@ -9,7 +9,7 @@ import { user } from '$lib/stores';
  */
 export function isDemoUser() {
     const currentUser = get(user);
-    return currentUser?.is_demo === true;
+    return currentUser?.info?.is_demo === true;
 }
 
 /**

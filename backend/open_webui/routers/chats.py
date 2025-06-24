@@ -25,7 +25,6 @@ from pydantic import BaseModel
 from open_webui.utils.auth import get_admin_user, get_verified_user, decode_token, get_current_user_by_api_key
 from open_webui.models.users import Users, UserModel
 from open_webui.utils.access_control import has_permission
-from open_webui.utils.demo_data import DemoDataManager
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
@@ -88,20 +87,6 @@ def get_optional_user(
 async def get_session_user_chat_list(
     user=Depends(get_verified_user), page: Optional[int] = None
 ):
-    # Check if this is a demo user
-    if DemoDataManager.is_demo_user(user):
-        demo_chats = DemoDataManager.get_demo_chats(user.id)
-        # Convert to ChatTitleIdResponse format
-        chat_list = []
-        for chat in demo_chats:
-            chat_list.append(ChatTitleIdResponse(
-                id=chat["id"],
-                title=chat["title"],
-                updated_at=chat["updated_at"],
-                created_at=chat["created_at"]
-            ))
-        return chat_list
-    
     if page is not None:
         limit = 60
         skip = (page - 1) * limit
@@ -207,6 +192,13 @@ async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
 
 @router.post("/import", response_model=Optional[ChatResponse])
 async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)):
+    # Block demo users from importing chats
+    if hasattr(user, 'info') and user.info and user.info.get('is_demo'):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Demo users cannot import chats"
+        )
+        
     try:
         chat = Chats.import_chat(user.id, form_data)
         if chat:
@@ -486,16 +478,6 @@ async def get_user_chat_list_by_tag_name(
 
 @router.get("/{id}", response_model=Optional[ChatResponse])
 async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
-    # Check if this is a demo user
-    if DemoDataManager.is_demo_user(user):
-        demo_chat = DemoDataManager.get_demo_chat_by_id(id, user.id)
-        if demo_chat:
-            return ChatResponse(**demo_chat)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
-            )
-    
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
 
     if chat:

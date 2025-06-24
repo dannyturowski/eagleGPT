@@ -220,65 +220,6 @@ def get_current_user(
         )
 
     if data is not None and "id" in data:
-        # Check if this is a demo token
-        if data.get("is_demo", False):
-            # Create a virtual demo user (not from DB)
-            from open_webui.models.users import UserModel
-            from open_webui.demo_auth_data import get_demo_user
-            
-            session_id = data.get("session_id", "default")[:8] if data.get("session_id") else "default"
-            demo_user_data = get_demo_user(session_id)
-            
-            # Create a demo user object that looks like a UserModel but with extra attributes
-            class DemoUser:
-                def __init__(self, data):
-                    self.id = data["id"]
-                    self.email = data["email"]
-                    self.name = data["name"]
-                    self.role = data["role"]
-                    self.profile_image_url = data["profile_image_url"]
-                    self.is_active = True
-                    self.created_at = int(datetime.now(UTC).timestamp())
-                    self.updated_at = int(datetime.now(UTC).timestamp())
-                    self.last_active_at = int(datetime.now(UTC).timestamp())
-                    self.is_demo = True
-                    self.permissions = data["permissions"]
-                    self.api_key = None
-                    self.settings = None
-                    self.info = None
-                    self.oauth_sub = None
-                
-                def model_dump(self, exclude_none=False):
-                    """Mimic Pydantic's model_dump method"""
-                    data = {
-                        "id": self.id,
-                        "email": self.email,
-                        "name": self.name,
-                        "role": self.role,
-                        "profile_image_url": self.profile_image_url,
-                        "is_active": self.is_active,
-                        "created_at": self.created_at,
-                        "updated_at": self.updated_at,
-                        "last_active_at": self.last_active_at,
-                        "is_demo": self.is_demo,
-                        "permissions": self.permissions
-                    }
-                    if not exclude_none:
-                        data.update({
-                            "api_key": self.api_key,
-                            "settings": self.settings,
-                            "info": self.info,
-                            "oauth_sub": self.oauth_sub
-                        })
-                    return data
-                
-                def model_dump_json(self, exclude_none=False):
-                    """Mimic Pydantic's model_dump_json method"""
-                    import json
-                    return json.dumps(self.model_dump(exclude_none=exclude_none))
-            
-            return DemoUser(demo_user_data)
-        
         user = Users.get_user_by_id(data["id"])
         if user is None:
             raise HTTPException(

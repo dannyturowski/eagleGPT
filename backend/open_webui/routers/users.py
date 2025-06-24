@@ -172,16 +172,6 @@ async def update_default_user_permissions(
 
 @router.get("/user/settings", response_model=Optional[UserSettings])
 async def get_user_settings_by_session_user(user=Depends(get_verified_user)):
-    # Check if this is a demo user
-    if hasattr(user, 'is_demo') and user.is_demo:
-        # Return default settings for demo users
-        return UserSettings(
-            ui={},
-            model_config={},
-            audio={},
-            notifications={}
-        )
-    
     user = Users.get_user_by_id(user.id)
     if user:
         return user.settings
