@@ -266,6 +266,199 @@ The Dream has always been about hope and possibility—and that remains as power
         "archived": False,
         "share_id": None,
         "folder_id": None
+    },
+    {
+        "id": "demo_chat_4",
+        "title": "American Military Heroes and Veterans",
+        "created_at": int(time.time()) - 86400 * 1,  # 1 day ago
+        "updated_at": int(time.time()) - 86400 * 1,
+        "chat": {
+            "history": {
+                "currentId": "msg_2",
+                "messages": {
+                    "msg_1": {
+                        "id": "msg_1",
+                        "role": "user",
+                        "content": "Tell me about some of America's greatest military heroes",
+                        "timestamp": int(time.time()) - 86400 * 1,
+                    },
+                    "msg_2": {
+                        "id": "msg_2",
+                        "role": "assistant",
+                        "content": """America has been blessed with countless military heroes who exemplify courage, honor, and sacrifice. Here are some of our nation's greatest:
+
+**Revolutionary War Heroes:**
+
+**George Washington** (1732-1799)
+- Commander-in-Chief of Continental Army
+- Led the colonies to victory against the British Empire
+- Crossed the Delaware River in the famous surprise attack
+- "First in war, first in peace, first in the hearts of his countrymen"
+
+**Marquis de Lafayette** (1757-1834)
+- Young French volunteer who served without pay
+- Washington's surrogate son and trusted general
+- Key to securing French alliance
+
+**Civil War Heroes:**
+
+**Abraham Lincoln** (1809-1865)
+- Commander-in-Chief during our nation's greatest trial
+- Preserved the Union and freed the enslaved
+- "With malice toward none, with charity for all"
+
+**Ulysses S. Grant** (1822-1885)
+- Union General who won the Civil War
+- Later became President
+- "I propose to fight it out on this line if it takes all summer"
+
+**Robert E. Lee** (1807-1870)
+- Though he fought for the Confederacy, respected for his honor and character
+- Urged reconciliation after the war
+- West Point graduate who exemplified duty
+
+**World War Heroes:**
+
+**Alvin York** (1887-1964)
+- WWI Medal of Honor recipient
+- Single-handedly captured 132 German soldiers
+- Tennessee mountain man who became a legend
+
+**Audie Murphy** (1925-1971)
+- WWII's most decorated soldier
+- Medal of Honor for single-handedly holding off German attack
+- Later became a Hollywood actor
+
+**Dwight D. Eisenhower** (1890-1969)
+- Supreme Allied Commander in Europe
+- Planned D-Day invasion
+- Later President who kept America strong and peaceful
+
+**Modern Heroes:**
+
+**John McCain** (1936-2018)
+- Navy pilot shot down over Vietnam
+- Endured 5+ years as POW, refused early release
+- Served his country in Senate for decades
+
+**Pat Tillman** (1976-2004)
+- NFL player who left lucrative career after 9/11
+- Joined Army Rangers
+- Killed in Afghanistan while serving his country
+
+**Medal of Honor Recipients**
+- Over 3,500 Americans have received our highest military honor
+- Each represents the best of American character
+- "Above and beyond the call of duty"
+
+These heroes remind us that freedom isn't free—it's protected by the brave men and women who serve our nation with honor! 🇺🇸🎖️""",
+                        "timestamp": int(time.time()) - 86400 * 1 + 60,
+                        "model": "gpt-4",
+                    }
+                }
+            }
+        },
+        "meta": {
+            "tags": ["military", "heroes", "veterans", "honor"]
+        },
+        "pinned": False,
+        "archived": False,
+        "share_id": None,
+        "folder_id": None
+    },
+    {
+        "id": "demo_chat_5",
+        "title": "American Symbols and Their Meaning",
+        "created_at": int(time.time()) - 86400 * 12,  # 12 days ago
+        "updated_at": int(time.time()) - 86400 * 12,
+        "chat": {
+            "history": {
+                "currentId": "msg_2",
+                "messages": {
+                    "msg_1": {
+                        "id": "msg_1",
+                        "role": "user",
+                        "content": "What do the American flag, eagle, and other symbols represent?",
+                        "timestamp": int(time.time()) - 86400 * 12,
+                    },
+                    "msg_2": {
+                        "id": "msg_2",
+                        "role": "assistant",
+                        "content": """American symbols are powerful representations of our nation's values, history, and aspirations. Each tells a story of freedom and democracy:
+
+**🇺🇸 The American Flag - "Old Glory"**
+
+**Design Meaning:**
+- **13 Stripes**: Original 13 colonies that declared independence
+- **50 Stars**: Current 50 states united as one nation
+- **Red**: Hardiness and valor - the courage of our people
+- **White**: Purity and innocence - our noble ideals
+- **Blue**: Vigilance, perseverance, and justice - eternal principles
+
+**History**: First Continental Congress flag had British Union Jack, showing our evolution to full independence.
+
+**🦅 The Bald Eagle - National Bird**
+
+**Why the Eagle?**
+- **Strength and Power**: Soars high, sees far, powerful in flight
+- **Freedom**: Lives independently, masters of their domain
+- **Longevity**: Can live 20-30 years in wild, representing endurance
+- **Native to America**: Found only in North America
+- **Sharp Vision**: Symbolizes our nation's foresight and wisdom
+
+**Benjamin Franklin's Opinion**: Preferred the turkey, calling it "more respectable" and "truly original native of America." But the eagle won!
+
+**🗽 Statue of Liberty - "Lady Liberty"**
+
+**Symbols within the Symbol:**
+- **Torch**: Enlightenment lighting the world
+- **Crown with 7 Spikes**: Seven seas and continents
+- **Tablet**: Declaration of Independence (July 4, 1776)
+- **Broken Chains**: Freedom from oppression
+- **Gift from France**: International friendship
+
+**🔔 Liberty Bell**
+
+**Inscription**: "Proclaim LIBERTY throughout all the Land unto all the Inhabitants thereof"
+- **Crack**: Adds character, shows our nation survives trials
+- **Biblical Quote**: Leviticus 25:10, emphasizing moral foundation
+- **Pennsylvania State House**: Where independence was declared
+
+**🦅 Uncle Sam**
+
+**Origins**: Based on Samuel Wilson, meat packer during War of 1812
+- **Stars and Stripes Outfit**: Wearing our flag's colors
+- **Pointing Finger**: "I Want YOU" - calling citizens to service
+- **White Beard**: Wisdom and authority of mature nation
+
+**Other Important Symbols:**
+
+**The Great Seal**:
+- Eagle holding olive branch (peace) and arrows (war)
+- "E Pluribus Unum" - "Out of many, one"
+- All-seeing eye - Divine providence
+
+**The Capitol Dome**:
+- Statue of Freedom on top
+- Classical architecture showing democratic heritage
+
+**Mount Rushmore**:
+- Four presidents representing birth, growth, development, preservation
+
+These symbols unite us across all backgrounds, reminding us of the principles that make America exceptional: liberty, justice, opportunity, and the pursuit of happiness! 🌟""",
+                        "timestamp": int(time.time()) - 86400 * 12 + 60,
+                        "model": "gpt-4",
+                    }
+                }
+            }
+        },
+        "meta": {
+            "tags": ["symbols", "patriotism", "flag", "eagle", "liberty"]
+        },
+        "pinned": True,
+        "archived": False,
+        "share_id": None,
+        "folder_id": None
     }
 ]
 
