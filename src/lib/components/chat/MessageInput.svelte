@@ -34,7 +34,7 @@
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { deleteFileById } from '$lib/apis/files';
-	import { checkDemoRestriction } from '$lib/utils/demo';
+	import { checkDemoRestriction, isDemoUser } from '$lib/utils/demo';
 
 	import { WEBUI_BASE_URL, WEBUI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -43,6 +43,7 @@
 	import FilesOverlay from './MessageInput/FilesOverlay.svelte';
 	import Commands from './MessageInput/Commands.svelte';
 	import ToolServersModal from './ToolServersModal.svelte';
+	import DemoRestrictionModal from './DemoRestrictionModal.svelte';
 
 	import RichTextInput from '../common/RichTextInput.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -101,6 +102,7 @@
 	});
 
 	let showTools = false;
+	let showDemoRestrictionModal = false;
 
 	let loaded = false;
 	let recording = false;
@@ -455,6 +457,7 @@
 
 <FilesOverlay show={dragged} />
 <ToolServersModal bind:show={showTools} {selectedToolIds} />
+<DemoRestrictionModal bind:show={showDemoRestrictionModal} action="create new chats" />
 
 {#if loaded}
 	<div class="w-full font-primary">
@@ -594,7 +597,11 @@
 								document.getElementById('chat-input')?.focus();
 
 								if ($settings?.speechAutoSend ?? false) {
-									dispatch('submit', prompt);
+									if (isDemoUser()) {
+										showDemoRestrictionModal = true;
+									} else {
+										dispatch('submit', prompt);
+									}
 								}
 							}}
 						/>
@@ -603,7 +610,8 @@
 							class="w-full flex flex-col gap-1.5"
 							on:submit|preventDefault={() => {
 								// Check if demo user
-								if (checkDemoRestriction('send messages')) {
+								if (isDemoUser()) {
+									showDemoRestrictionModal = true;
 									return;
 								}
 								// check if selectedModels support image input
