@@ -1,6 +1,7 @@
 services:
   openwebui:
-    build: .
+    # PRODUCTION: Use pre-built image (change to build: . for local development)
+    image: ghcr.io/dannyturowski/eaglegpt:latest
     container_name: eaglegpt
     restart: unless-stopped
     environment:
@@ -9,11 +10,18 @@ services:
       - ENABLE_DEMO_MODE=${ENABLE_DEMO_MODE:-true}
       # etc...
     volumes:
+      # ⚠️  CRITICAL: DO NOT CHANGE THESE BIND MOUNT PATHS! ⚠️
+      # These paths contain the existing production database and user data
+      # Changing them will cause admin registration page and lose all users/chats
+      # The existing database is at: /mnt/HC_Volume_102716551/openwebui/data/webui.db
       - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
       - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
     ports:
       - "3000:8080"   # host:container
 
+# ⚠️  WARNING: These named volumes below are NOT USED in production! ⚠️
+# They exist for local development but production uses bind mounts above
+# DO NOT change the volumes section above to use these - it will reset the database!
 volumes:
   data:
   backup:

@@ -67,17 +67,115 @@ cd backend
 pip install -r requirements.txt
 python -m open_webui.main  # Runs on http://localhost:8080
 
-# Full stack with Docker
+# Full stack with Docker (LOCAL DEVELOPMENT ONLY)
+# ⚠️  NEVER run this on production server - use deployment commands below!
 docker compose up -d  # Runs on http://localhost:3000
 
-# Deploy to production
-docker context use hel1
+# Build and deploy to production (RECOMMENDED)
+# Build locally and push to GHCR to avoid timeout issues
+docker build -t ghcr.io/dannyturowski/eaglegpt:latest .
+docker push ghcr.io/dannyturowski/eaglegpt:latest
+
+# Then on the server (or using helsinki1 context)
+docker context use helsinki1
+docker pull ghcr.io/dannyturowski/eaglegpt:latest
+docker stop eaglegpt && docker rm eaglegpt
 docker compose up -d
+
+# 🚨 CRITICAL DATABASE VOLUME WARNING 🚨
+# ALWAYS use docker-compose for deployment
+# NEVER use docker run directly - it will reset the database to admin registration!
+# NEVER change the bind mount paths in docker-compose.yml - they contain production data!
+# 
+# The existing production database is stored at:
+# /mnt/HC_Volume_102716551/openwebui/data/webui.db (on Helsinki server)
+#
+# If you see the admin registration page, you've broken the volume configuration!
+# Correct volumes in docker-compose.yml:
+#   - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
+#   - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
+
+# Alternative: Direct deployment (may timeout due to ML dependencies)
+docker context use helsinki1
+docker compose up -d --build
 
 # Run tests
 npm test  # Frontend tests
 cd backend && pytest  # Backend tests
 ```
+
+## Build Issues and Solutions
+
+The frontend build process can be slow due to large ML dependencies (mermaid, onnxruntime-web, @huggingface/transformers). If builds hang during transformation:
+
+1. **Use Docker for deployment** - The production Docker build includes optimizations
+2. **Local development** - Use `npm run dev` for testing features  
+3. **ML dependencies** - Consider dynamic imports for heavy packages to improve build times
+
+## Demo Modal Implementation
+
+✅ **Completed**: Demo restriction modal for anonymous users
+- Location: `/src/lib/components/chat/DemoRestrictionModal.svelte`
+- Integration: Updated `MessageInput.svelte` to show modal instead of submitting chats for demo users
+- Features: Patriotic themed modal with "Sign Up Free" and "Continue Browsing" options
+- Function: `isDemoUser()` checks if user is anonymous and shows appropriate restrictions
+
+## Database Volume Troubleshooting
+
+**🚨 If you see the admin registration page after deployment, you've broken the database volumes!**
+
+### Symptoms:
+- Site shows "Create Account" instead of login page
+- All existing users and chats are gone
+- Database appears to be reset
+
+### Cause:
+- Used `docker run` instead of `docker-compose`
+- Changed the bind mount paths in docker-compose.yml
+- Used named volumes instead of bind mounts
+
+### Fix:
+1. Stop the container: `docker stop eaglegpt && docker rm eaglegpt`
+2. Verify docker-compose.yml has correct bind mounts:
+   ```yaml
+   volumes:
+     - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
+     - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
+   ```
+3. Deploy with: `docker compose -f eaglegpt-compose.yml up -d`
+4. Verify database exists: `ls -la /mnt/HC_Volume_102716551/openwebui/data/webui.db`
+
+## Production Deployment Checklist
+
+Before deploying, verify these critical points:
+
+### ✅ Pre-deployment Checklist:
+1. **docker-compose.yml verification:**
+   - [ ] Uses `image: ghcr.io/dannyturowski/eaglegpt:latest` (not `build: .`)
+   - [ ] Contains bind mounts: `/mnt/HC_Volume_102716551/openwebui/data:/app/backend/data`
+   - [ ] Contains bind mounts: `/mnt/HC_Volume_102716551/openwebui/backup:/app/backup`
+   - [ ] Does NOT use `data:` or `backup:` named volumes in the volumes section
+
+2. **Deployment process:**
+   - [ ] Use `docker compose -f eaglegpt-compose.yml up -d` (NEVER `docker run`)
+   - [ ] Deploy on helsinki1 context: `docker context use helsinki1`
+
+### ✅ Post-deployment Verification:
+1. **Database check:**
+   - [ ] Existing database file exists: `ls -la /mnt/HC_Volume_102716551/openwebui/data/webui.db`
+   - [ ] File is recent (not newly created): check timestamp
+   - [ ] File size > 1MB (not empty database)
+
+2. **Site verification:**
+   - [ ] Site responds: `curl http://95.217.152.30:3000`
+   - [ ] Shows LOGIN page (not "Create Account" registration)
+   - [ ] Existing users can log in
+   - [ ] Demo modal works for anonymous users
+
+### 🚨 If Something Goes Wrong:
+- **Admin registration page = database volumes are wrong!**
+- **Fix:** Stop container, verify docker-compose.yml paths, redeploy
+- **Never** try to fix by changing database paths - restore correct ones
 
 ## Important Notes
 
