@@ -13,7 +13,12 @@ services:
       # ⚠️  CRITICAL: DO NOT CHANGE THESE BIND MOUNT PATHS! ⚠️
       # These paths contain the existing production database and user data
       # Changing them will cause admin registration page and lose all users/chats
-      # The existing database is at: /mnt/HC_Volume_102716551/openwebui/data/webui.db
+      # 
+      # 🚨 THE ONLY CORRECT PRODUCTION DATABASE PATH IS: 🚨
+      # /mnt/HC_Volume_102716551/openwebui/data/webui.db (8 users, 1.1MB)
+      # 
+      # ⚠️ DO NOT USE /opt/openwebui/data - THAT IS OLD BACKUP! ⚠️
+      # ⚠️ DO NOT USE docker volumes - THAT WILL CREATE NEW DATABASE! ⚠️
       - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
       - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
     ports:

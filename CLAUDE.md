@@ -87,13 +87,21 @@ docker compose up -d
 # NEVER use docker run directly - it will reset the database to admin registration!
 # NEVER change the bind mount paths in docker-compose.yml - they contain production data!
 # 
-# The existing production database is stored at:
-# /mnt/HC_Volume_102716551/openwebui/data/webui.db (on Helsinki server)
+# The ONLY CORRECT production database is stored at:
+# /mnt/HC_Volume_102716551/openwebui/data/webui.db (on Helsinki server block storage)
+#
+# ⚠️ DO NOT USE /opt/openwebui/data - that contains OLD BACKUPS ONLY! ⚠️
 #
 # If you see the admin registration page, you've broken the volume configuration!
-# Correct volumes in docker-compose.yml:
+# Correct volumes in docker-compose.yml MUST BE:
 #   - /mnt/HC_Volume_102716551/openwebui/data:/app/backend/data
 #   - /mnt/HC_Volume_102716551/openwebui/backup:/app/backup
+#
+# Production database details:
+# - Location: /mnt/HC_Volume_102716551/openwebui/data/webui.db
+# - Size: ~1.1MB
+# - Users: 8 (Danny, Ev, Min, Jm, TabTabs, Elizabeth, John, Demo User)
+# - Last verified: July 2025
 
 # Alternative: Direct deployment (may timeout due to ML dependencies)
 docker context use helsinki1
