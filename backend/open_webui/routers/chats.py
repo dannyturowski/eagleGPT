@@ -26,6 +26,26 @@ from open_webui.utils.auth import get_admin_user, get_verified_user, decode_toke
 from open_webui.models.users import Users, UserModel
 from open_webui.utils.access_control import has_permission
 
+
+def is_demo_user(user) -> bool:
+    """Check if the user is a demo user"""
+    if hasattr(user, 'info') and user.info:
+        try:
+            import json
+            info = json.loads(user.info) if isinstance(user.info, str) else user.info
+            if info.get('is_demo') is True:
+                return True
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    
+    # Fallback: check user ID and email
+    if hasattr(user, 'id') and user.id == 'demo_eaglegpt_shared':
+        return True
+    if hasattr(user, 'email') and user.email == 'demo@eaglegpt.us':
+        return True
+    
+    return False
+
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
@@ -104,7 +124,7 @@ async def get_session_user_chat_list(
 @router.delete("/", response_model=bool)
 async def delete_all_user_chats(request: Request, user=Depends(get_verified_user)):
     # Block demo users from deleting
-    if DemoDataManager.is_demo_user(user):
+    if is_demo_user(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Demo users cannot delete chats. Please sign up for a full account."
@@ -169,7 +189,7 @@ async def get_user_chat_list_by_user_id(
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
     # Block demo users from creating new chats
-    if DemoDataManager.is_demo_user(user):
+    if is_demo_user(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Demo users cannot create new chats. Please sign up for a full account."
@@ -499,7 +519,7 @@ async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
     # Block demo users from updating
-    if DemoDataManager.is_demo_user(user):
+    if is_demo_user(user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Demo users cannot modify chats. Please sign up for a full account."
