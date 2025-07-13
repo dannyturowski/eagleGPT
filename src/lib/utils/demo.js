@@ -9,7 +9,15 @@ import { user } from '$lib/stores';
  */
 export function isDemoUser() {
     const currentUser = get(user);
-    return currentUser?.info?.is_demo === true;
+    // Check if user has the is_demo flag set to true
+    if (currentUser?.info?.is_demo === true) {
+        return true;
+    }
+    // Fallback: check if user ID matches known demo user
+    if (currentUser?.id === 'demo_eaglegpt_shared' || currentUser?.email === 'demo@eaglegpt.us') {
+        return true;
+    }
+    return false;
 }
 
 /**

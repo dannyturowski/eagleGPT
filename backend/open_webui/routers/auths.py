@@ -74,6 +74,7 @@ log.setLevel(SRC_LOG_LEVELS["MAIN"])
 class SessionUserResponse(Token, UserResponse):
     expires_at: Optional[int] = None
     permissions: Optional[dict] = None
+    info: Optional[dict] = None
 
 
 @router.get("/", response_model=SessionUserResponse)
@@ -125,6 +126,7 @@ async def get_session_user(
         "role": user.role,
         "profile_image_url": user.profile_image_url,
         "permissions": user_permissions,
+        "info": user.info if hasattr(user, 'info') else None,
     }
 
 
@@ -346,6 +348,7 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     "role": user.role,
                     "profile_image_url": user.profile_image_url,
                     "permissions": user_permissions,
+                    "info": user.info if hasattr(user, 'info') else None,
                 }
             else:
                 raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
@@ -456,17 +459,24 @@ async def demo_access(request: Request, response: Response):
             secure=WEBUI_AUTH_COOKIE_SECURE,
         )
         
-        # Return user data with demo flag in info
-        return SessionUserResponse(
-            token=token,
-            token_type="Bearer",
-            id=demo_user.id,
-            email=demo_user.email,
-            name=demo_user.name,
-            role=demo_user.role,
-            profile_image_url=demo_user.profile_image_url,
-            info={"is_demo": True}  # Include demo flag
+        # Get permissions for demo user
+        user_permissions = get_permissions(
+            demo_user.id, request.app.state.config.USER_PERMISSIONS
         )
+        
+        # Return user data with demo flag in info
+        return {
+            "token": token,
+            "token_type": "Bearer",
+            "expires_at": expires_at,
+            "id": demo_user.id,
+            "email": demo_user.email,
+            "name": demo_user.name,
+            "role": demo_user.role,
+            "profile_image_url": demo_user.profile_image_url,
+            "permissions": user_permissions,
+            "info": {"is_demo": True}  # Include demo flag
+        }
         
     except Exception as e:
         log.error(f"Demo access error: {e}")
@@ -569,6 +579,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
             "role": user.role,
             "profile_image_url": user.profile_image_url,
             "permissions": user_permissions,
+            "info": user.info if hasattr(user, 'info') else None,
         }
     else:
         raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
@@ -691,6 +702,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
                 "role": user.role,
                 "profile_image_url": user.profile_image_url,
                 "permissions": user_permissions,
+                "info": user.info if hasattr(user, 'info') else None,
             }
         else:
             raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
@@ -785,6 +797,7 @@ async def add_user(form_data: AddUserForm, user=Depends(get_admin_user)):
                 "name": user.name,
                 "role": user.role,
                 "profile_image_url": user.profile_image_url,
+                "info": user.info if hasattr(user, 'info') else None,
             }
         else:
             raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)

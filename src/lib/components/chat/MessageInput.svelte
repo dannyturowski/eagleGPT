@@ -882,7 +882,12 @@
 															if (enterPressed) {
 																e.preventDefault();
 																if (prompt !== '' || files.length > 0) {
-																	dispatch('submit', prompt);
+																	// Check if demo user
+																	if (isDemoUser()) {
+																		showDemoRestrictionModal = true;
+																	} else {
+																		dispatch('submit', prompt);
+																	}
 																}
 															}
 														}
@@ -1090,7 +1095,12 @@
 
 														// Submit the prompt when Enter key is pressed
 														if ((prompt !== '' || files.length > 0) && enterPressed) {
-															dispatch('submit', prompt);
+															// Check if demo user
+															if (isDemoUser()) {
+																showDemoRestrictionModal = true;
+															} else {
+																dispatch('submit', prompt);
+															}
 														}
 													}
 												}

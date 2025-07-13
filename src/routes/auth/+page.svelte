@@ -6,7 +6,7 @@
 	import { page } from '$app/stores';
 
 	import { getBackendConfig } from '$lib/apis';
-	import { ldapUserSignIn, getSessionUser, userSignIn, userSignUp } from '$lib/apis/auths';
+	import { ldapUserSignIn, getSessionUser, userSignIn, userSignUp, demoAuth } from '$lib/apis/auths';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
 	import { WEBUI_NAME, config, user, socket } from '$lib/stores';
@@ -86,6 +86,14 @@
 		} else {
 			await signUpHandler();
 		}
+	};
+
+	const demoAuthHandler = async () => {
+		const sessionUser = await demoAuth().catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+		await setSessionUser(sessionUser);
 	};
 
 	const checkOauthCallback = async () => {
@@ -351,6 +359,20 @@
 												</button>
 											</div>
 										{/if}
+
+										<!-- Demo Mode Button -->
+										<div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
+											<button
+												class="bg-blue-600/10 hover:bg-blue-600/20 text-blue-600 dark:text-blue-400 transition w-full rounded-full font-medium text-sm py-2.5"
+												type="button"
+												on:click={demoAuthHandler}
+											>
+												🦅 {$i18n.t('Browse as Demo')}
+											</button>
+											<p class="mt-2 text-xs text-gray-500 dark:text-gray-400 text-center">
+												{$i18n.t('Explore features with limited access')}
+											</p>
+										</div>
 									{/if}
 								{/if}
 							</div>

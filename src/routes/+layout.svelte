@@ -605,46 +605,20 @@
 						await goto(`/auth?redirect=${encodedUrl}`);
 					}
 				} else {
-					// Check if demo mode is enabled and we're not on auth page
-					const backendConfig = await getBackendConfig();
-					if (backendConfig?.enable_demo_mode && $page.url.pathname !== '/auth') {
-						try {
-							// Automatically create demo session for anonymous users
-							const demoUser = await demoAuth();
-							
-							if (demoUser && demoUser.token) {
-								// The backend sets the cookie, we just need to store the token
-								localStorage.token = demoUser.token;
-								
-								// Set up socket with demo token
-								$socket.emit('user-join', { auth: { token: demoUser.token } });
-								
-								// Save demo user to store
-								await user.set(demoUser);
-								await config.set(await getBackendConfig());
-								
-								// Demo user is now logged in, continue normally
-								// No redirect needed - they can browse the site
-							} else {
-								throw new Error('Demo auth failed');
-							}
-						} catch (error) {
-							console.error('Demo auth error:', error);
-							// Demo mode failed, redirect to auth
-							await goto(`/auth?redirect=${encodedUrl}`);
-						}
-					} else {
-						// Allow anonymous access to certain routes
-						const publicRoutes = ['/auth', '/s'];
-						const isPublicRoute = publicRoutes.some(route => 
-							$page.url.pathname === route || $page.url.pathname.startsWith('/s/')
-						);
-						
-						if (!isPublicRoute) {
-							// Redirect to auth for all protected routes
-							await goto(`/auth?redirect=${encodedUrl}`);
-						}
+					// No token - redirect to auth unless on public route
+					const publicRoutes = ['/auth', '/s'];
+					const isPublicRoute = publicRoutes.some(route => 
+						$page.url.pathname === route || $page.url.pathname.startsWith('/s/')
+					);
+					
+					if (!isPublicRoute) {
+						// Redirect to auth for all protected routes
+						await goto(`/auth?redirect=${encodedUrl}`);
 					}
+					
+					// Note: Demo mode should only be activated through explicit user action
+					// (e.g., clicking "Browse as Demo" button on auth page)
+					// NOT automatically for all anonymous users
 				}
 			}
 		} else {
