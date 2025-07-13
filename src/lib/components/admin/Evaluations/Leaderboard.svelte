@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as ort from 'onnxruntime-web';
+	import * as ort from 'onnxruntime-web/all';
 	import { env, AutoModel, AutoTokenizer } from '@huggingface/transformers';
 
 	env.backends.onnx.wasm.wasmPaths = '/wasm/';

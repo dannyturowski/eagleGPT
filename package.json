@@ -19,9 +19,12 @@
 		"i18n:parse": "i18next --config i18next-parser.config.ts && prettier --write \"src/lib/i18n/**/*.{js,json}\"",
 		"cy:open": "cypress open",
 		"test:frontend": "vitest --passWithNoTests",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui",
 		"pyodide:fetch": "node scripts/prepare-pyodide.js"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.53.1",
 		"@sveltejs/adapter-auto": "3.2.2",
 		"@sveltejs/adapter-static": "^3.0.2",
 		"@sveltejs/kit": "^2.5.20",
@@ -98,7 +101,7 @@
 		"katex": "^0.16.22",
 		"kokoro-js": "^1.1.1",
 		"marked": "^9.1.0",
-		"mermaid": "^11.6.0",
+		"mermaid": "^11.7.0",
 		"paneforge": "^0.0.6",
 		"panzoom": "^9.4.3",
 		"prosemirror-commands": "^1.6.0",

@@ -1,12 +1,27 @@
 <script lang="ts">
-	import mermaid from 'mermaid';
-
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { getContext, onMount, tick, onDestroy } from 'svelte';
 	import { copyToClipboard } from '$lib/utils';
 
 	import 'highlight.js/styles/github-dark.min.css';
+	
+	let mermaid;
+	const initMermaid = async () => {
+		// Dynamic import to avoid SSR issues
+		const mermaidModule = await import('mermaid');
+		mermaid = mermaidModule.default;
+		
+		// Initialize mermaid with theme
+		if (mermaid) {
+			const theme = document.documentElement.classList.contains('dark') ? 'dark' : 'default';
+			mermaid.initialize({
+				startOnLoad: false,
+				theme: theme,
+				securityLevel: 'loose'
+			});
+		}
+	};
 
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import CodeEditor from '$lib/components/common/CodeEditor.svelte';
@@ -325,7 +340,12 @@
 
 	const drawMermaidDiagram = async () => {
 		try {
-			if (await mermaid.parse(code)) {
+			// Ensure mermaid is loaded
+			if (!mermaid) {
+				await initMermaid();
+			}
+			
+			if (mermaid && await mermaid.parse(code)) {
 				const { svg } = await mermaid.render(`mermaid-${uuidv4()}`, code);
 				mermaidHtml = svg;
 			}
@@ -390,18 +410,9 @@
 			onUpdate(token);
 		}
 
-		if (document.documentElement.classList.contains('dark')) {
-			mermaid.initialize({
-				startOnLoad: true,
-				theme: 'dark',
-				securityLevel: 'loose'
-			});
-		} else {
-			mermaid.initialize({
-				startOnLoad: true,
-				theme: 'default',
-				securityLevel: 'loose'
-			});
+		// Initialize mermaid if we're rendering a mermaid diagram
+		if (lang === 'mermaid') {
+			await initMermaid();
 		}
 	});
 

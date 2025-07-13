@@ -1494,6 +1494,7 @@ async def get_app_config(request: Request):
             "enable_ldap": app.state.config.ENABLE_LDAP,
             "enable_api_key": app.state.config.ENABLE_API_KEY,
             "enable_signup": app.state.config.ENABLE_SIGNUP,
+            "enable_demo_mode": app.state.config.ENABLE_DEMO_MODE,
             "enable_login_form": app.state.config.ENABLE_LOGIN_FORM,
             "enable_websocket": ENABLE_WEBSOCKET_SUPPORT,
             **(

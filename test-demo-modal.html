@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Demo Modal</title>
+    <script>
+        // Simulate the demo user check and modal display
+        function isDemoUser() {
+            // In production, this would check the actual user store
+            return true; // Simulate demo user
+        }
+        
+        function showDemoRestrictionModal() {
+            const modal = document.getElementById('demo-modal');
+            modal.style.display = 'block';
+        }
+        
+        function handleSubmit(event) {
+            event.preventDefault();
+            if (isDemoUser()) {
+                showDemoRestrictionModal();
+                return;
+            }
+            console.log('Submitting message...');
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('demo-modal');
+            modal.style.display = 'none';
+        }
+        
+        function goToAuth() {
+            window.location.href = '/auth';
+        }
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        .chat-input {
+            width: 100%;
+            padding: 10px;
+            border-radius: 20px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        
+        .submit-btn {
+            padding: 10px 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #2a2a2a;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        .modal-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .flag {
+            font-size: 2.5em;
+        }
+        
+        .modal-title {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        
+        .modal-subtitle {
+            font-size: 0.9em;
+            color: #999;
+        }
+        
+        .modal-content {
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .btn-primary {
+            flex: 1;
+            padding: 10px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        .btn-secondary {
+            padding: 10px 20px;
+            background: #444;
+            color: #ccc;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        .overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 999;
+        }
+        
+        .modal {
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <h1>eagleGPT Demo Mode Test</h1>
+    <p>You are logged in as: <strong>Demo User</strong></p>
+    
+    <form onsubmit="handleSubmit(event)">
+        <input type="text" class="chat-input" placeholder="Type a message..." value="Test message">
+        <button type="submit" class="submit-btn">Send Message</button>
+    </form>
+    
+    <!-- Demo Restriction Modal -->
+    <div class="overlay" id="demo-overlay" onclick="closeModal()"></div>
+    <div class="modal" id="demo-modal">
+        <div class="modal-header">
+            <div class="flag">🇺🇸</div>
+            <div>
+                <div class="modal-title">Join the Patriot Community!</div>
+                <div class="modal-subtitle">Demo mode is view-only</div>
+            </div>
+        </div>
+        
+        <div class="modal-content">
+            <p>You're currently browsing in demo mode. To create new chats, you'll need to create a free account.</p>
+            <p><strong>Join thousands of patriots using eagleGPT to fight back against Big Tech censorship!</strong></p>
+        </div>
+        
+        <div class="modal-buttons">
+            <button class="btn-primary" onclick="goToAuth()">
+                <span>👤</span> Sign Up Free
+            </button>
+            <button class="btn-secondary" onclick="closeModal()">
+                Continue Browsing
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        // Also show overlay when modal is shown
+        const originalShowModal = showDemoRestrictionModal;
+        showDemoRestrictionModal = function() {
+            document.getElementById('demo-overlay').style.display = 'block';
+            originalShowModal();
+        }
+        
+        // Update close modal to also hide overlay
+        const originalCloseModal = closeModal;
+        closeModal = function() {
+            document.getElementById('demo-overlay').style.display = 'none';
+            originalCloseModal();
+        }
+    </script>
+</body>
+</html>
