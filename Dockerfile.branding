@@ -1,0 +1,12 @@
+# Lightweight EagleGPT branding layer
+# Extends official OpenWebUI image with custom favicon/logo
+FROM ghcr.io/open-webui/open-webui:v0.6.33
+
+# Copy EagleGPT branding assets to replace OpenWebUI defaults
+COPY --chown=root:root assets/eagleGPT-1.png /app/backend/open_webui/static/favicon.png
+COPY --chown=root:root assets/eagleGPT-1.png /app/backend/open_webui/static/favicon-96x96.png
+COPY --chown=root:root assets/eagleGPT-1.png /app/backend/open_webui/static/logo.png
+COPY --chown=root:root assets/eagleGPT-1.png /app/backend/open_webui/static/apple-touch-icon.png
+
+# Optional: Set EagleGPT as the site name
+ENV WEBUI_NAME="EagleGPT"
