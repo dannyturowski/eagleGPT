@@ -2,7 +2,6 @@ import re
 import uuid
 import time
 import datetime
-from datetime import timedelta
 import logging
 from aiohttp import ClientSession
 
@@ -16,11 +15,11 @@ from open_webui.models.auths import (
     SigninResponse,
     SignupForm,
     UpdatePasswordForm,
-    UpdateProfileForm,
     UserResponse,
 )
-from open_webui.models.users import Users
+from open_webui.models.users import Users, UpdateProfileForm
 from open_webui.models.groups import Groups
+from open_webui.models.oauth_sessions import OAuthSessions
 
 from open_webui.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from open_webui.env import (
@@ -31,6 +30,7 @@ from open_webui.env import (
     WEBUI_AUTH_COOKIE_SAME_SITE,
     WEBUI_AUTH_COOKIE_SECURE,
     WEBUI_AUTH_SIGNOUT_REDIRECT_URL,
+    ENABLE_INITIAL_ADMIN_SIGNUP,
     SRC_LOG_LEVELS,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -51,15 +51,13 @@ from open_webui.utils.auth import (
 )
 from open_webui.utils.webhook import post_webhook
 from open_webui.utils.access_control import get_permissions
-# from open_webui.demo_auth_data import get_demo_user  # Removed - using shared demo user
 
 from typing import Optional, List
 
 from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
 
-if ENABLE_LDAP.value:
-    from ldap3 import Server, Connection, NONE, Tls
-    from ldap3.utils.conv import escape_filter_chars
+from ldap3 import Server, Connection, NONE, Tls
+from ldap3.utils.conv import escape_filter_chars
 
 router = APIRouter()
 
@@ -74,10 +72,15 @@ log.setLevel(SRC_LOG_LEVELS["MAIN"])
 class SessionUserResponse(Token, UserResponse):
     expires_at: Optional[int] = None
     permissions: Optional[dict] = None
-    info: Optional[dict] = None
 
 
-@router.get("/", response_model=SessionUserResponse)
+class SessionUserInfoResponse(SessionUserResponse):
+    bio: Optional[str] = None
+    gender: Optional[str] = None
+    date_of_birth: Optional[datetime.date] = None
+
+
+@router.get("/", response_model=SessionUserInfoResponse)
 async def get_session_user(
     request: Request, response: Response, user=Depends(get_current_user)
 ):
@@ -125,8 +128,10 @@ async def get_session_user(
         "name": user.name,
         "role": user.role,
         "profile_image_url": user.profile_image_url,
+        "bio": user.bio,
+        "gender": user.gender,
+        "date_of_birth": user.date_of_birth,
         "permissions": user_permissions,
-        "info": user.info if hasattr(user, 'info') else None,
     }
 
 
@@ -142,7 +147,7 @@ async def update_profile(
     if session_user:
         user = Users.update_user_by_id(
             session_user.id,
-            {"profile_image_url": form_data.profile_image_url, "name": form_data.name},
+            form_data.model_dump(),
         )
         if user:
             return user
@@ -233,14 +238,30 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
         if not connection_app.bind():
             raise HTTPException(400, detail="Application account bind failed")
 
+        ENABLE_LDAP_GROUP_MANAGEMENT = (
+            request.app.state.config.ENABLE_LDAP_GROUP_MANAGEMENT
+        )
+        ENABLE_LDAP_GROUP_CREATION = request.app.state.config.ENABLE_LDAP_GROUP_CREATION
+        LDAP_ATTRIBUTE_FOR_GROUPS = request.app.state.config.LDAP_ATTRIBUTE_FOR_GROUPS
+
+        search_attributes = [
+            f"{LDAP_ATTRIBUTE_FOR_USERNAME}",
+            f"{LDAP_ATTRIBUTE_FOR_MAIL}",
+            "cn",
+        ]
+
+        if ENABLE_LDAP_GROUP_MANAGEMENT:
+            search_attributes.append(f"{LDAP_ATTRIBUTE_FOR_GROUPS}")
+            log.info(
+                f"LDAP Group Management enabled. Adding {LDAP_ATTRIBUTE_FOR_GROUPS} to search attributes"
+            )
+
+        log.info(f"LDAP search attributes: {search_attributes}")
+
         search_success = connection_app.search(
             search_base=LDAP_SEARCH_BASE,
             search_filter=f"(&({LDAP_ATTRIBUTE_FOR_USERNAME}={escape_filter_chars(form_data.user.lower())}){LDAP_SEARCH_FILTERS})",
-            attributes=[
-                f"{LDAP_ATTRIBUTE_FOR_USERNAME}",
-                f"{LDAP_ATTRIBUTE_FOR_MAIL}",
-                "cn",
-            ],
+            attributes=search_attributes,
         )
 
         if not search_success or not connection_app.entries:
@@ -263,6 +284,69 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
         cn = str(entry["cn"])
         user_dn = entry.entry_dn
 
+        user_groups = []
+        if ENABLE_LDAP_GROUP_MANAGEMENT and LDAP_ATTRIBUTE_FOR_GROUPS in entry:
+            group_dns = entry[LDAP_ATTRIBUTE_FOR_GROUPS]
+            log.info(f"LDAP raw group DNs for user {username}: {group_dns}")
+
+            if group_dns:
+                log.info(f"LDAP group_dns original: {group_dns}")
+                log.info(f"LDAP group_dns type: {type(group_dns)}")
+                log.info(f"LDAP group_dns length: {len(group_dns)}")
+
+                if hasattr(group_dns, "value"):
+                    group_dns = group_dns.value
+                    log.info(f"Extracted .value property: {group_dns}")
+                elif hasattr(group_dns, "__iter__") and not isinstance(
+                    group_dns, (str, bytes)
+                ):
+                    group_dns = list(group_dns)
+                    log.info(f"Converted to list: {group_dns}")
+
+                if isinstance(group_dns, list):
+                    group_dns = [str(item) for item in group_dns]
+                else:
+                    group_dns = [str(group_dns)]
+
+                log.info(
+                    f"LDAP group_dns after processing - type: {type(group_dns)}, length: {len(group_dns)}"
+                )
+
+                for group_idx, group_dn in enumerate(group_dns):
+                    group_dn = str(group_dn)
+                    log.info(f"Processing group DN #{group_idx + 1}: {group_dn}")
+
+                    try:
+                        group_cn = None
+
+                        for item in group_dn.split(","):
+                            item = item.strip()
+                            if item.upper().startswith("CN="):
+                                group_cn = item[3:]
+                                break
+
+                        if group_cn:
+                            user_groups.append(group_cn)
+
+                        else:
+                            log.warning(
+                                f"Could not extract CN from group DN: {group_dn}"
+                            )
+                    except Exception as e:
+                        log.warning(
+                            f"Failed to extract group name from DN {group_dn}: {e}"
+                        )
+
+                log.info(
+                    f"LDAP groups for user {username}: {user_groups} (total: {len(user_groups)})"
+                )
+            else:
+                log.info(f"No groups found for user {username}")
+        elif ENABLE_LDAP_GROUP_MANAGEMENT:
+            log.warning(
+                f"LDAP Group Management enabled but {LDAP_ATTRIBUTE_FOR_GROUPS} attribute not found in user entry"
+            )
+
         if username == form_data.user.lower():
             connection_user = Connection(
                 server,
@@ -277,11 +361,9 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
             user = Users.get_user_by_email(email)
             if not user:
                 try:
-                    user_count = Users.get_num_users()
-
                     role = (
                         "admin"
-                        if user_count == 0
+                        if not Users.has_users()
                         else request.app.state.config.DEFAULT_USER_ROLE
                     )
 
@@ -338,6 +420,22 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     user.id, request.app.state.config.USER_PERMISSIONS
                 )
 
+                if (
+                    user.role != "admin"
+                    and ENABLE_LDAP_GROUP_MANAGEMENT
+                    and user_groups
+                ):
+                    if ENABLE_LDAP_GROUP_CREATION:
+                        Groups.create_groups_by_group_names(user.id, user_groups)
+
+                    try:
+                        Groups.sync_groups_by_group_names(user.id, user_groups)
+                        log.info(
+                            f"Successfully synced groups for user {user.id}: {user_groups}"
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to sync groups for user {user.id}: {e}")
+
                 return {
                     "token": token,
                     "token_type": "Bearer",
@@ -348,7 +446,6 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
                     "role": user.role,
                     "profile_image_url": user.profile_image_url,
                     "permissions": user_permissions,
-                    "info": user.info if hasattr(user, 'info') else None,
                 }
             else:
                 raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
@@ -357,130 +454,6 @@ async def ldap_auth(request: Request, response: Response, form_data: LdapForm):
     except Exception as e:
         log.error(f"LDAP authentication error: {str(e)}")
         raise HTTPException(400, detail="LDAP authentication failed.")
-
-
-############################
-# Demo Access
-############################
-
-
-@router.post("/demo", response_model=SessionUserResponse)
-async def demo_access(request: Request, response: Response):
-    """
-    Create a demo session for anonymous users using a single shared demo account.
-    This account is created once and reused for all demo sessions.
-    """
-    # Check if demo mode is enabled
-    if not request.app.state.config.ENABLE_DEMO_MODE:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo mode is not enabled"
-        )
-    
-    try:
-        from open_webui.models.chats import Chats, ChatImportForm
-        import json
-        import os
-        
-        # Fixed demo user ID - same for all demo sessions
-        DEMO_USER_ID = "demo_eaglegpt_shared"
-        DEMO_EMAIL = "demo@eaglegpt.us"
-        DEMO_NAME = "Demo User"
-        
-        # Check if demo user already exists
-        demo_user = Users.get_user_by_id(DEMO_USER_ID)
-        
-        if not demo_user:
-            # Create the shared demo user (only happens once)
-            # First create the user
-            demo_user = Users.insert_new_user(
-                id=DEMO_USER_ID,
-                name=DEMO_NAME,
-                email=DEMO_EMAIL,
-                profile_image_url="/static/user.png",
-                role="user"
-            )
-            
-            if not demo_user:
-                raise Exception("Failed to create demo user")
-            
-            # Add demo marker to user info
-            Users.update_user_by_id(
-                DEMO_USER_ID,
-                {"info": {"is_demo": True, "created_at": int(time.time())}}
-            )
-            
-            # Import demo chats (only on first creation)
-            DEMO_CHATS_FILE = "/app/demo_chats.json"
-            if not os.path.exists(DEMO_CHATS_FILE):
-                DEMO_CHATS_FILE = os.path.join(os.path.dirname(__file__), "../../../demo_chats.json")
-            
-            if os.path.exists(DEMO_CHATS_FILE):
-                try:
-                    with open(DEMO_CHATS_FILE, 'r', encoding='utf-8') as f:
-                        demo_chats = json.load(f)
-                    
-                    # Clear any existing chats first
-                    existing_chats = Chats.get_chats_by_user_id(DEMO_USER_ID)
-                    for chat in existing_chats:
-                        Chats.delete_chat_by_id(chat.id)
-                    
-                    # Import demo chats
-                    for chat_data in demo_chats[:5]:  # Import first 5 chats
-                        try:
-                            import_form = ChatImportForm(
-                                chat=chat_data.get("chat", {}),
-                                meta=chat_data.get("meta", {}),
-                                pinned=chat_data.get("pinned", False),
-                                folder_id=chat_data.get("folder_id", None)
-                            )
-                            Chats.import_chat(DEMO_USER_ID, import_form)
-                        except Exception as e:
-                            log.error(f"Error importing demo chat: {e}")
-                except Exception as e:
-                    log.error(f"Error loading demo chats: {e}")
-        
-        # Create auth token (short-lived for demo users)
-        expires_delta = timedelta(hours=2)
-        expires_at = int(time.time()) + int(expires_delta.total_seconds())
-        
-        token = create_token(
-            data={"id": DEMO_USER_ID},
-            expires_delta=expires_delta,
-        )
-        
-        # Set the cookie token
-        response.set_cookie(
-            key="token",
-            value=token,
-            expires=datetime.datetime.fromtimestamp(expires_at, datetime.timezone.utc),
-            httponly=True,
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
-        )
-        
-        # Get permissions for demo user
-        user_permissions = get_permissions(
-            demo_user.id, request.app.state.config.USER_PERMISSIONS
-        )
-        
-        # Return user data with demo flag in info
-        return {
-            "token": token,
-            "token_type": "Bearer",
-            "expires_at": expires_at,
-            "id": demo_user.id,
-            "email": demo_user.email,
-            "name": demo_user.name,
-            "role": demo_user.role,
-            "profile_image_url": demo_user.profile_image_url,
-            "permissions": user_permissions,
-            "info": {"is_demo": True}  # Include demo flag
-        }
-        
-    except Exception as e:
-        log.error(f"Demo access error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create demo session")
 
 
 ############################
@@ -515,7 +488,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
             group_names = [name.strip() for name in group_names if name.strip()]
 
             if group_names:
-                Groups.sync_user_groups_by_group_names(user.id, group_names)
+                Groups.sync_groups_by_group_names(user.id, group_names)
 
     elif WEBUI_AUTH == False:
         admin_email = "admin@localhost"
@@ -524,7 +497,7 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
         if Users.get_user_by_email(admin_email.lower()):
             user = Auths.authenticate_user(admin_email.lower(), admin_password)
         else:
-            if Users.get_num_users() != 0:
+            if Users.has_users():
                 raise HTTPException(400, detail=ERROR_MESSAGES.EXISTING_USERS)
 
             await signup(
@@ -579,18 +552,9 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
             "role": user.role,
             "profile_image_url": user.profile_image_url,
             "permissions": user_permissions,
-            "info": user.info if hasattr(user, 'info') else None,
         }
     else:
         raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_CRED)
-
-
-############################
-# Demo Mode Authentication
-############################
-
-
-# Duplicate demo endpoint removed - see line 363 for the main implementation
 
 
 ############################
@@ -600,22 +564,23 @@ async def signin(request: Request, response: Response, form_data: SigninForm):
 
 @router.post("/signup", response_model=SessionUserResponse)
 async def signup(request: Request, response: Response, form_data: SignupForm):
+    has_users = Users.has_users()
 
     if WEBUI_AUTH:
         if (
             not request.app.state.config.ENABLE_SIGNUP
             or not request.app.state.config.ENABLE_LOGIN_FORM
         ):
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
-            )
+            if has_users or not ENABLE_INITIAL_ADMIN_SIGNUP:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
+                )
     else:
-        if Users.get_num_users() != 0:
+        if has_users:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, detail=ERROR_MESSAGES.ACCESS_PROHIBITED
             )
 
-    user_count = Users.get_num_users()
     if not validate_email_format(form_data.email.lower()):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.INVALID_EMAIL_FORMAT
@@ -625,9 +590,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
         raise HTTPException(400, detail=ERROR_MESSAGES.EMAIL_TAKEN)
 
     try:
-        role = (
-            "admin" if user_count == 0 else request.app.state.config.DEFAULT_USER_ROLE
-        )
+        role = "admin" if not has_users else request.app.state.config.DEFAULT_USER_ROLE
 
         # The password passed to bcrypt must be 72 bytes or fewer. If it is longer, it will be truncated before hashing.
         if len(form_data.password.encode("utf-8")) > 72:
@@ -673,7 +636,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
             )
 
             if request.app.state.config.WEBHOOK_URL:
-                post_webhook(
+                await post_webhook(
                     request.app.state.WEBUI_NAME,
                     request.app.state.config.WEBHOOK_URL,
                     WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
@@ -688,7 +651,7 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
                 user.id, request.app.state.config.USER_PERMISSIONS
             )
 
-            if user_count == 0:
+            if not has_users:
                 # Disable signup after the first user is created
                 request.app.state.config.ENABLE_SIGNUP = False
 
@@ -702,7 +665,6 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
                 "role": user.role,
                 "profile_image_url": user.profile_image_url,
                 "permissions": user_permissions,
-                "info": user.info if hasattr(user, 'info') else None,
             }
         else:
             raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
@@ -714,37 +676,52 @@ async def signup(request: Request, response: Response, form_data: SignupForm):
 @router.get("/signout")
 async def signout(request: Request, response: Response):
     response.delete_cookie("token")
+    response.delete_cookie("oui-session")
+    response.delete_cookie("oauth_id_token")
 
-    if ENABLE_OAUTH_SIGNUP.value:
-        oauth_id_token = request.cookies.get("oauth_id_token")
-        if oauth_id_token:
+    oauth_session_id = request.cookies.get("oauth_session_id")
+    if oauth_session_id:
+        response.delete_cookie("oauth_session_id")
+
+        session = OAuthSessions.get_session_by_id(oauth_session_id)
+        oauth_server_metadata_url = (
+            request.app.state.oauth_manager.get_server_metadata_url(session.provider)
+            if session
+            else None
+        ) or OPENID_PROVIDER_URL.value
+
+        if session and oauth_server_metadata_url:
+            oauth_id_token = session.token.get("id_token")
             try:
-                async with ClientSession() as session:
-                    async with session.get(OPENID_PROVIDER_URL.value) as resp:
-                        if resp.status == 200:
-                            openid_data = await resp.json()
+                async with ClientSession(trust_env=True) as session:
+                    async with session.get(oauth_server_metadata_url) as r:
+                        if r.status == 200:
+                            openid_data = await r.json()
                             logout_url = openid_data.get("end_session_endpoint")
-                            if logout_url:
-                                response.delete_cookie("oauth_id_token")
 
+                            if logout_url:
                                 return JSONResponse(
                                     status_code=200,
                                     content={
                                         "status": True,
-                                        "redirect_url": f"{logout_url}?id_token_hint={oauth_id_token}",
+                                        "redirect_url": f"{logout_url}?id_token_hint={oauth_id_token}"
+                                        + (
+                                            f"&post_logout_redirect_uri={WEBUI_AUTH_SIGNOUT_REDIRECT_URL}"
+                                            if WEBUI_AUTH_SIGNOUT_REDIRECT_URL
+                                            else ""
+                                        ),
                                     },
                                     headers=response.headers,
                                 )
                         else:
-                            raise HTTPException(
-                                status_code=resp.status,
-                                detail="Failed to fetch OpenID configuration",
-                            )
+                            raise Exception("Failed to fetch OpenID configuration")
+
             except Exception as e:
                 log.error(f"OpenID signout error: {str(e)}")
                 raise HTTPException(
                     status_code=500,
                     detail="Failed to sign out from the OpenID provider.",
+                    headers=response.headers,
                 )
 
     if WEBUI_AUTH_SIGNOUT_REDIRECT_URL:
@@ -797,7 +774,6 @@ async def add_user(form_data: AddUserForm, user=Depends(get_admin_user)):
                 "name": user.name,
                 "role": user.role,
                 "profile_image_url": user.profile_image_url,
-                "info": user.info if hasattr(user, 'info') else None,
             }
         else:
             raise HTTPException(500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
@@ -846,45 +822,36 @@ async def get_admin_details(request: Request, user=Depends(get_current_user)):
 
 @router.get("/admin/config")
 async def get_admin_config(request: Request, user=Depends(get_admin_user)):
-    try:
-        return {
-            "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
-            "WEBUI_URL": request.app.state.config.WEBUI_URL,
-            "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
-            "ENABLE_DEMO_MODE": request.app.state.config.ENABLE_DEMO_MODE,
-            "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
-            "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
-            "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
-            "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
-            "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
-            "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
-            "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
-            "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
-            "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
-            "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
-            "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
-            "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-            "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-            "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
-        }
-    except Exception as e:
-        log.error(f"Error getting admin config: {str(e)}")
-        log.error(f"Available configs: {request.app.state.config.list_configs()}")
-        raise HTTPException(500, detail=f"Failed to get configuration: {str(e)}")
+    return {
+        "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
+        "WEBUI_URL": request.app.state.config.WEBUI_URL,
+        "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
+        "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
+        "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
+        "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
+        "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
+        "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
+        "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+        "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
+        "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
+        "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
+        "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+        "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
+        "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
+        "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
+    }
 
 
 class AdminConfig(BaseModel):
     SHOW_ADMIN_DETAILS: bool
     WEBUI_URL: str
     ENABLE_SIGNUP: bool
-    ENABLE_DEMO_MODE: bool
     ENABLE_API_KEY: bool
     ENABLE_API_KEY_ENDPOINT_RESTRICTIONS: bool
     API_KEY_ALLOWED_ENDPOINTS: str
     DEFAULT_USER_ROLE: str
     JWT_EXPIRES_IN: str
     ENABLE_COMMUNITY_SHARING: bool
-    ENABLE_PUBLIC_SHARING: bool
     ENABLE_MESSAGE_RATING: bool
     ENABLE_CHANNELS: bool
     ENABLE_NOTES: bool
@@ -898,72 +865,64 @@ class AdminConfig(BaseModel):
 async def update_admin_config(
     request: Request, form_data: AdminConfig, user=Depends(get_admin_user)
 ):
-    try:
-        request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
-        request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
-        request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
-        request.app.state.config.ENABLE_DEMO_MODE = form_data.ENABLE_DEMO_MODE
+    request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
+    request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
+    request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
 
-        request.app.state.config.ENABLE_API_KEY = form_data.ENABLE_API_KEY
-        request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS = (
-            form_data.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS
-        )
-        request.app.state.config.API_KEY_ALLOWED_ENDPOINTS = (
-            form_data.API_KEY_ALLOWED_ENDPOINTS
-        )
+    request.app.state.config.ENABLE_API_KEY = form_data.ENABLE_API_KEY
+    request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS = (
+        form_data.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS
+    )
+    request.app.state.config.API_KEY_ALLOWED_ENDPOINTS = (
+        form_data.API_KEY_ALLOWED_ENDPOINTS
+    )
 
-        request.app.state.config.ENABLE_CHANNELS = form_data.ENABLE_CHANNELS
-        request.app.state.config.ENABLE_NOTES = form_data.ENABLE_NOTES
+    request.app.state.config.ENABLE_CHANNELS = form_data.ENABLE_CHANNELS
+    request.app.state.config.ENABLE_NOTES = form_data.ENABLE_NOTES
 
-        if form_data.DEFAULT_USER_ROLE in ["pending", "user", "admin"]:
-            request.app.state.config.DEFAULT_USER_ROLE = form_data.DEFAULT_USER_ROLE
+    if form_data.DEFAULT_USER_ROLE in ["pending", "user", "admin"]:
+        request.app.state.config.DEFAULT_USER_ROLE = form_data.DEFAULT_USER_ROLE
 
-        pattern = r"^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$"
+    pattern = r"^(-1|0|(-?\d+(\.\d+)?)(ms|s|m|h|d|w))$"
 
-        # Check if the input string matches the pattern
-        if re.match(pattern, form_data.JWT_EXPIRES_IN):
-            request.app.state.config.JWT_EXPIRES_IN = form_data.JWT_EXPIRES_IN
+    # Check if the input string matches the pattern
+    if re.match(pattern, form_data.JWT_EXPIRES_IN):
+        request.app.state.config.JWT_EXPIRES_IN = form_data.JWT_EXPIRES_IN
 
-        request.app.state.config.ENABLE_COMMUNITY_SHARING = (
-            form_data.ENABLE_COMMUNITY_SHARING
-        )
-        request.app.state.config.ENABLE_PUBLIC_SHARING = form_data.ENABLE_PUBLIC_SHARING
-        request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
+    request.app.state.config.ENABLE_COMMUNITY_SHARING = (
+        form_data.ENABLE_COMMUNITY_SHARING
+    )
+    request.app.state.config.ENABLE_MESSAGE_RATING = form_data.ENABLE_MESSAGE_RATING
 
-        request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
+    request.app.state.config.ENABLE_USER_WEBHOOKS = form_data.ENABLE_USER_WEBHOOKS
 
-        request.app.state.config.PENDING_USER_OVERLAY_TITLE = (
-            form_data.PENDING_USER_OVERLAY_TITLE
-        )
-        request.app.state.config.PENDING_USER_OVERLAY_CONTENT = (
-            form_data.PENDING_USER_OVERLAY_CONTENT
-        )
+    request.app.state.config.PENDING_USER_OVERLAY_TITLE = (
+        form_data.PENDING_USER_OVERLAY_TITLE
+    )
+    request.app.state.config.PENDING_USER_OVERLAY_CONTENT = (
+        form_data.PENDING_USER_OVERLAY_CONTENT
+    )
 
-        request.app.state.config.RESPONSE_WATERMARK = form_data.RESPONSE_WATERMARK
+    request.app.state.config.RESPONSE_WATERMARK = form_data.RESPONSE_WATERMARK
 
-        return {
-            "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
-            "WEBUI_URL": request.app.state.config.WEBUI_URL,
-            "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
-            "ENABLE_DEMO_MODE": request.app.state.config.ENABLE_DEMO_MODE,
-            "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
-            "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
-            "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
-            "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
-            "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
-            "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
-            "ENABLE_PUBLIC_SHARING": request.app.state.config.ENABLE_PUBLIC_SHARING,
-            "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
-            "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
-            "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
-            "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
-            "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
-            "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
-            "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
-        }
-    except Exception as e:
-        log.error(f"Error updating admin config: {str(e)}")
-        raise HTTPException(500, detail=f"Failed to update configuration: {str(e)}")
+    return {
+        "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
+        "WEBUI_URL": request.app.state.config.WEBUI_URL,
+        "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
+        "ENABLE_API_KEY": request.app.state.config.ENABLE_API_KEY,
+        "ENABLE_API_KEY_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEY_ENDPOINT_RESTRICTIONS,
+        "API_KEY_ALLOWED_ENDPOINTS": request.app.state.config.API_KEY_ALLOWED_ENDPOINTS,
+        "DEFAULT_USER_ROLE": request.app.state.config.DEFAULT_USER_ROLE,
+        "JWT_EXPIRES_IN": request.app.state.config.JWT_EXPIRES_IN,
+        "ENABLE_COMMUNITY_SHARING": request.app.state.config.ENABLE_COMMUNITY_SHARING,
+        "ENABLE_MESSAGE_RATING": request.app.state.config.ENABLE_MESSAGE_RATING,
+        "ENABLE_CHANNELS": request.app.state.config.ENABLE_CHANNELS,
+        "ENABLE_NOTES": request.app.state.config.ENABLE_NOTES,
+        "ENABLE_USER_WEBHOOKS": request.app.state.config.ENABLE_USER_WEBHOOKS,
+        "PENDING_USER_OVERLAY_TITLE": request.app.state.config.PENDING_USER_OVERLAY_TITLE,
+        "PENDING_USER_OVERLAY_CONTENT": request.app.state.config.PENDING_USER_OVERLAY_CONTENT,
+        "RESPONSE_WATERMARK": request.app.state.config.RESPONSE_WATERMARK,
+    }
 
 
 class LdapServerConfig(BaseModel):
@@ -1111,54 +1070,3 @@ async def get_api_key(user=Depends(get_current_user)):
         }
     else:
         raise HTTPException(404, detail=ERROR_MESSAGES.API_KEY_NOT_FOUND)
-
-
-############################
-# Demo Authentication
-############################
-
-@router.post("/demo", response_model=SessionUserResponse)
-async def demo_auth(request: Request, response: Response):
-    """Generate a demo token for anonymous users to browse the interface."""
-    if not request.app.state.config.ENABLE_DEMO_MODE:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Demo mode is not enabled")
-    
-    # Generate a unique session ID for this demo user
-    session_id = str(uuid.uuid4())
-    
-    # Import demo data
-    # from open_webui.demo_auth_data import get_demo_user  # Removed - using shared demo user
-    demo_user_data = get_demo_user(session_id)
-    
-    # Create demo token with session ID
-    token = create_token(
-        data={
-            "id": demo_user_data["id"],
-            "is_demo": True,
-            "session_id": session_id
-        },
-        expires_delta=timedelta(hours=2)  # Demo sessions expire after 2 hours
-    )
-    
-    expires_at = int((datetime.now(UTC) + timedelta(hours=2)).timestamp())
-    
-    response.set_cookie(
-        key="token",
-        value=token,
-        max_age=60 * 60 * 2,  # 2 hours
-        httponly=True,
-        samesite=WEBUI_SESSION_COOKIE_SAME_SITE,
-        secure=WEBUI_SESSION_COOKIE_SECURE,
-    )
-    
-    return {
-        "token": token,
-        "token_type": "Bearer",
-        "expires_at": expires_at,
-        "id": demo_user_data["id"],
-        "email": demo_user_data["email"],
-        "name": demo_user_data["name"],
-        "role": demo_user_data["role"],
-        "profile_image_url": demo_user_data["profile_image_url"],
-        "permissions": demo_user_data["permissions"]
-    }

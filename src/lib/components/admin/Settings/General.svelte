@@ -30,25 +30,7 @@
 		latest: ''
 	};
 
-	let adminConfig = {
-		DEFAULT_USER_ROLE: 'user',
-		ENABLE_SIGNUP: false,
-		SHOW_ADMIN_DETAILS: false,
-		PENDING_USER_OVERLAY_TITLE: '',
-		PENDING_USER_OVERLAY_CONTENT: '',
-		ENABLE_API_KEY: false,
-		ENABLE_API_KEY_ENDPOINT_RESTRICTIONS: false,
-		API_KEY_ALLOWED_ENDPOINTS: '',
-		JWT_EXPIRES_IN: '',
-		ENABLE_COMMUNITY_SHARING: false,
-		ENABLE_PUBLIC_SHARING: false,
-		ENABLE_MESSAGE_RATING: false,
-		ENABLE_NOTES: false,
-		ENABLE_CHANNELS: false,
-		ENABLE_USER_WEBHOOKS: false,
-		RESPONSE_WATERMARK: '',
-		WEBUI_URL: ''
-	};
+	let adminConfig = null;
 	let webhookUrl = '';
 
 	// LDAP
@@ -108,12 +90,13 @@
 	};
 
 	onMount(async () => {
-		checkForVersionUpdates();
+		if ($config?.features?.enable_version_update_check) {
+			checkForVersionUpdates();
+		}
 
 		await Promise.all([
 			(async () => {
-				const fetchedConfig = await getAdminConfig(localStorage.token);
-				adminConfig = { ...adminConfig, ...fetchedConfig };
+				adminConfig = await getAdminConfig(localStorage.token);
 			})(),
 
 			(async () => {
@@ -136,7 +119,8 @@
 	}}
 >
 	<div class="mt-0.5 space-y-3 overflow-y-scroll scrollbar-hidden h-full">
-		<div class="">
+		{#if adminConfig !== null}
+			<div class="">
 				<div class="mb-3.5">
 					<div class=" mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
 
@@ -155,16 +139,18 @@
 										v{WEBUI_VERSION}
 									</Tooltip>
 
-									<a
-										href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
-										target="_blank"
-									>
-										{updateAvailable === null
-											? $i18n.t('Checking for updates...')
-											: updateAvailable
-												? `(v${version.latest} ${$i18n.t('available!')})`
-												: $i18n.t('(latest)')}
-									</a>
+									{#if $config?.features?.enable_version_update_check}
+										<a
+											href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
+											target="_blank"
+										>
+											{updateAvailable === null
+												? $i18n.t('Checking for updates...')
+												: updateAvailable
+													? `(v${version.latest} ${$i18n.t('available!')})`
+													: $i18n.t('(latest)')}
+										</a>
+									{/if}
 								</div>
 
 								<button
@@ -178,15 +164,17 @@
 								</button>
 							</div>
 
-							<button
-								class=" text-xs px-3 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium"
-								type="button"
-								on:click={() => {
-									checkForVersionUpdates();
-								}}
-							>
-								{$i18n.t('Check for updates')}
-							</button>
+							{#if $config?.features?.enable_version_update_check}
+								<button
+									class=" text-xs px-3 py-1.5 bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 transition rounded-lg font-medium"
+									type="button"
+									on:click={() => {
+										checkForVersionUpdates();
+									}}
+								>
+									{$i18n.t('Check for updates')}
+								</button>
+							{/if}
 						</div>
 					</div>
 
@@ -302,7 +290,7 @@
 							<select
 								class="dark:bg-gray-900 w-fit pr-8 rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
 								bind:value={adminConfig.DEFAULT_USER_ROLE}
-								placeholder="Select a role"
+								placeholder={$i18n.t('Select a role')}
 							>
 								<option value="pending">{$i18n.t('pending')}</option>
 								<option value="user">{$i18n.t('user')}</option>
@@ -599,7 +587,7 @@
 												</div>
 											</div>
 											<div class="flex justify-between items-center text-xs">
-												<div class=" font-medium">Validate certificate</div>
+												<div class=" font-medium">{$i18n.t('Validate certificate')}</div>
 
 												<div class="mt-1">
 													<Switch bind:state={LDAP_SERVER.validate_cert} />
@@ -639,14 +627,6 @@
 						</div>
 
 						<Switch bind:state={adminConfig.ENABLE_COMMUNITY_SHARING} />
-					</div>
-
-					<div class="mb-2.5 flex w-full items-center justify-between pr-2">
-						<div class=" self-center text-xs font-medium">
-							{$i18n.t('Enable Public Sharing')}
-						</div>
-
-						<Switch bind:state={adminConfig.ENABLE_PUBLIC_SHARING} />
 					</div>
 
 					<div class="mb-2.5 flex w-full items-center justify-between pr-2">
@@ -726,6 +706,7 @@
 					</div>
 				</div>
 			</div>
+		{/if}
 	</div>
 
 	<div class="flex justify-end pt-3 text-sm font-medium">

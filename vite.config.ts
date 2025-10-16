@@ -10,6 +10,7 @@ export default defineConfig({
 			targets: [
 				{
 					src: 'node_modules/onnxruntime-web/dist/*.jsep.*',
+
 					dest: 'wasm'
 				}
 			]
@@ -25,10 +26,7 @@ export default defineConfig({
 	worker: {
 		format: 'es'
 	},
-	optimizeDeps: {
-		exclude: ['mermaid']
-	},
-	ssr: {
-		noExternal: ['mermaid', '@huggingface/transformers', 'onnxruntime-web']
+	esbuild: {
+		pure: process.env.ENV === 'dev' ? [] : ['console.log', 'console.debug', 'console.error']
 	}
 });

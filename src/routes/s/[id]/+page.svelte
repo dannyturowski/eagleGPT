@@ -11,7 +11,6 @@
 	import { getChatByShareId, cloneSharedChatById } from '$lib/apis/chats';
 
 	import Messages from '$lib/components/chat/Messages.svelte';
-	import Navbar from '$lib/components/layout/Navbar.svelte';
 
 	import { getUserById, getUserSettings } from '$lib/apis/users';
 	import { getModels } from '$lib/apis';
@@ -61,23 +60,14 @@
 	//////////////////////////
 
 	const loadSharedChat = async () => {
-		// Check if user is authenticated
-		const token = localStorage.token || null;
-		
-		// Try to get user settings if authenticated
-		if (token) {
-			const userSettings = await getUserSettings(token).catch((error) => {
-				console.error(error);
-				return null;
-			});
+		const userSettings = await getUserSettings(localStorage.token).catch((error) => {
+			console.error(error);
+			return null;
+		});
 
-			if (userSettings) {
-				settings.set(userSettings.ui);
-			}
-		}
-		
-		// Fall back to localStorage settings for anonymous users
-		if (!token) {
+		if (userSettings) {
+			settings.set(userSettings.ui);
+		} else {
 			let localStorageSettings = {} as Parameters<(typeof settings)['set']>[0];
 
 			try {
@@ -89,35 +79,23 @@
 			settings.set(localStorageSettings);
 		}
 
-		// Get models if authenticated, otherwise use empty array
-		if (token) {
-			await models.set(
-				await getModels(
-					token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				).catch(() => [])
-			);
-		} else {
-			await models.set([]);
-		}
-		
+		await models.set(
+			await getModels(
+				localStorage.token,
+				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+			)
+		);
 		await chatId.set($page.params.id);
-		chat = await getChatByShareId(token, $chatId).catch(async (error) => {
+		chat = await getChatByShareId(localStorage.token, $chatId).catch(async (error) => {
 			await goto('/');
 			return null;
 		});
 
 		if (chat) {
-			// Try to get user details if authenticated, otherwise skip
-			if (token) {
-				user = await getUserById(token, chat.user_id).catch((error) => {
-					console.error(error);
-					return null;
-				});
-			} else {
-				// For anonymous users, create a basic user object or use null
-				user = null;
-			}
+			user = await getUserById(localStorage.token, chat.user_id).catch((error) => {
+				console.error(error);
+				return null;
+			});
 
 			const chatContent = chat.chat;
 
@@ -137,8 +115,8 @@
 				autoScroll = true;
 				await tick();
 
-				if (messages.length > 0) {
-					history.messages[messages.at(-1).id].done = true;
+				if (messages.length > 0 && messages.at(-1)?.id && messages.at(-1)?.id in history.messages) {
+					history.messages[messages.at(-1)?.id].done = true;
 				}
 				await tick();
 
@@ -151,16 +129,8 @@
 
 	const cloneSharedChat = async () => {
 		if (!chat) return;
-		
-		const token = localStorage.token;
-		
-		// Redirect to login if not authenticated
-		if (!token) {
-			goto('/auth');
-			return;
-		}
 
-		const res = await cloneSharedChatById(token, chat.id).catch((error) => {
+		const res = await cloneSharedChatById(localStorage.token, chat.id).catch((error) => {
 			toast.error(`${error}`);
 			return null;
 		});
@@ -216,7 +186,7 @@
 							bind:messages
 							bind:autoScroll
 							bottomPadding={files.length > 0}
-							sendPrompt={() => {}}
+							sendMessage={() => {}}
 							continueResponse={() => {}}
 							regenerateResponse={() => {}}
 						/>
@@ -229,10 +199,10 @@
 			>
 				<div class="pb-5">
 					<button
-						class="px-4 py-2 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+						class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
 						on:click={cloneSharedChat}
 					>
-						{localStorage.token ? $i18n.t('Clone Chat') : $i18n.t('Login to Clone')}
+						{$i18n.t('Clone Chat')}
 					</button>
 				</div>
 			</div>

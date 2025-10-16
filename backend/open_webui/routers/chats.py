@@ -14,88 +14,20 @@ from open_webui.models.chats import (
 from open_webui.models.tags import TagModel, Tags
 from open_webui.models.folders import Folders
 
-from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT, ENABLE_PUBLIC_SHARING
+from open_webui.config import ENABLE_ADMIN_CHAT_ACCESS, ENABLE_ADMIN_EXPORT
 from open_webui.constants import ERROR_MESSAGES
 from open_webui.env import SRC_LOG_LEVELS
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, BackgroundTasks, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 
-from open_webui.utils.auth import get_admin_user, get_verified_user, decode_token, get_current_user_by_api_key
-from open_webui.models.users import Users, UserModel
+from open_webui.utils.auth import get_admin_user, get_verified_user
 from open_webui.utils.access_control import has_permission
-
-
-def is_demo_user(user) -> bool:
-    """Check if the user is a demo user"""
-    if hasattr(user, 'info') and user.info:
-        try:
-            import json
-            info = json.loads(user.info) if isinstance(user.info, str) else user.info
-            if info.get('is_demo') is True:
-                return True
-        except (json.JSONDecodeError, AttributeError):
-            pass
-    
-    # Fallback: check user ID and email
-    if hasattr(user, 'id') and user.id == 'demo_eaglegpt_shared':
-        return True
-    if hasattr(user, 'email') and user.email == 'demo@eaglegpt.us':
-        return True
-    
-    return False
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS["MODELS"])
 
 router = APIRouter()
-
-# Bearer security for optional authentication
-bearer_security = HTTPBearer(auto_error=False)
-
-def get_optional_user(
-    request: Request,
-    response: Response,
-    background_tasks: BackgroundTasks,
-    auth_token: HTTPAuthorizationCredentials = Depends(bearer_security),
-) -> Optional[UserModel]:
-    """
-    Get the current user if authenticated, return None if not authenticated.
-    Does not raise exceptions for missing authentication.
-    """
-    token = None
-    
-    # Extract from Authorization header
-    if auth_token is not None:
-        token = auth_token.credentials
-    
-    # Fall back to cookie
-    if token is None and "token" in request.cookies:
-        token = request.cookies.get("token")
-    
-    # Return None if no token found
-    if token is None:
-        return None
-    
-    try:
-        # API key authentication
-        if token.startswith("sk-"):
-            return get_current_user_by_api_key(token)
-        
-        # JWT token authentication  
-        data = decode_token(token)
-        if data is not None and "id" in data:
-            user = Users.get_user_by_id(data["id"])
-            if user and background_tasks:
-                background_tasks.add_task(Users.update_user_last_active_by_id, user.id)
-            return user
-            
-    except Exception:
-        # Return None on any authentication error
-        pass
-    
-    return None
 
 ############################
 # GetChatList
@@ -104,16 +36,28 @@ def get_optional_user(
 
 @router.get("/", response_model=list[ChatTitleIdResponse])
 @router.get("/list", response_model=list[ChatTitleIdResponse])
-async def get_session_user_chat_list(
-    user=Depends(get_verified_user), page: Optional[int] = None
+def get_session_user_chat_list(
+    user=Depends(get_verified_user),
+    page: Optional[int] = None,
+    include_folders: Optional[bool] = False,
 ):
-    if page is not None:
-        limit = 60
-        skip = (page - 1) * limit
+    try:
+        if page is not None:
+            limit = 60
+            skip = (page - 1) * limit
 
-        return Chats.get_chat_title_id_list_by_user_id(user.id, skip=skip, limit=limit)
-    else:
-        return Chats.get_chat_title_id_list_by_user_id(user.id)
+            return Chats.get_chat_title_id_list_by_user_id(
+                user.id, include_folders=include_folders, skip=skip, limit=limit
+            )
+        else:
+            return Chats.get_chat_title_id_list_by_user_id(
+                user.id, include_folders=include_folders
+            )
+    except Exception as e:
+        log.exception(e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT()
+        )
 
 
 ############################
@@ -123,12 +67,6 @@ async def get_session_user_chat_list(
 
 @router.delete("/", response_model=bool)
 async def delete_all_user_chats(request: Request, user=Depends(get_verified_user)):
-    # Block demo users from deleting
-    if is_demo_user(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo users cannot delete chats. Please sign up for a full account."
-        )
 
     if user.role == "user" and not has_permission(
         user.id, "chat.delete", request.app.state.config.USER_PERMISSIONS
@@ -188,13 +126,6 @@ async def get_user_chat_list_by_user_id(
 
 @router.post("/new", response_model=Optional[ChatResponse])
 async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
-    # Block demo users from creating new chats
-    if is_demo_user(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo users cannot create new chats. Please sign up for a full account."
-        )
-    
     try:
         chat = Chats.insert_new_chat(user.id, form_data)
         return ChatResponse(**chat.model_dump())
@@ -212,13 +143,6 @@ async def create_new_chat(form_data: ChatForm, user=Depends(get_verified_user)):
 
 @router.post("/import", response_model=Optional[ChatResponse])
 async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)):
-    # Block demo users from importing chats
-    if hasattr(user, 'info') and user.info and user.info.get('is_demo'):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo users cannot import chats"
-        )
-        
     try:
         chat = Chats.import_chat(user.id, form_data)
         if chat:
@@ -246,7 +170,7 @@ async def import_chat(form_data: ChatImportForm, user=Depends(get_verified_user)
 
 
 @router.get("/search", response_model=list[ChatTitleIdResponse])
-async def search_user_chats(
+def search_user_chats(
     text: str, page: Optional[int] = None, user=Depends(get_verified_user)
 ):
     if page is None:
@@ -292,6 +216,28 @@ async def get_chats_by_folder_id(folder_id: str, user=Depends(get_verified_user)
         ChatResponse(**chat.model_dump())
         for chat in Chats.get_chats_by_folder_ids_and_user_id(folder_ids, user.id)
     ]
+
+
+@router.get("/folder/{folder_id}/list")
+async def get_chat_list_by_folder_id(
+    folder_id: str, page: Optional[int] = 1, user=Depends(get_verified_user)
+):
+    try:
+        limit = 60
+        skip = (page - 1) * limit
+
+        return [
+            {"title": chat.title, "id": chat.id, "updated_at": chat.updated_at}
+            for chat in Chats.get_chats_by_folder_id_and_user_id(
+                folder_id, user.id, skip=skip, limit=limit
+            )
+        ]
+
+    except Exception as e:
+        log.exception(e)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=ERROR_MESSAGES.DEFAULT()
+        )
 
 
 ############################
@@ -416,48 +362,35 @@ async def archive_all_chats(user=Depends(get_verified_user)):
 
 
 ############################
+# UnarchiveAllChats
+############################
+
+
+@router.post("/unarchive/all", response_model=bool)
+async def unarchive_all_chats(user=Depends(get_verified_user)):
+    return Chats.unarchive_all_chats_by_user_id(user.id)
+
+
+############################
 # GetSharedChatById
 ############################
 
 
 @router.get("/share/{share_id}", response_model=Optional[ChatResponse])
-async def get_shared_chat_by_id(
-    share_id: str, 
-    request: Request,
-    response: Response,
-    background_tasks: BackgroundTasks,
-    user: Optional[UserModel] = Depends(get_optional_user)
-):
-    # If public sharing is disabled, require authentication
-    if not ENABLE_PUBLIC_SHARING:
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
-            )
-        # Use the original logic for authenticated users
-        if user.role == "pending":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
-            )
-
-    # Determine how to fetch the chat based on user status
-    if user is None:
-        # Anonymous access - only allow shared chats
-        chat = Chats.get_chat_by_share_id(share_id)
-    elif user.role == "user" or (user.role == "admin" and not ENABLE_ADMIN_CHAT_ACCESS):
-        # Regular authenticated users
-        chat = Chats.get_chat_by_share_id(share_id)
-    elif user.role == "admin" and ENABLE_ADMIN_CHAT_ACCESS:
-        # Admin users with chat access
-        chat = Chats.get_chat_by_id(share_id)
-    else:
-        # Pending users
+async def get_shared_chat_by_id(share_id: str, user=Depends(get_verified_user)):
+    if user.role == "pending":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
         )
 
+    if user.role == "user" or (user.role == "admin" and not ENABLE_ADMIN_CHAT_ACCESS):
+        chat = Chats.get_chat_by_share_id(share_id)
+    elif user.role == "admin" and ENABLE_ADMIN_CHAT_ACCESS:
+        chat = Chats.get_chat_by_id(share_id)
+
     if chat:
         return ChatResponse(**chat.model_dump())
+
     else:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail=ERROR_MESSAGES.NOT_FOUND
@@ -518,13 +451,6 @@ async def get_chat_by_id(id: str, user=Depends(get_verified_user)):
 async def update_chat_by_id(
     id: str, form_data: ChatForm, user=Depends(get_verified_user)
 ):
-    # Block demo users from updating
-    if is_demo_user(user):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Demo users cannot modify chats. Please sign up for a full account."
-        )
-    
     chat = Chats.get_chat_by_id_and_user_id(id, user.id)
     if chat:
         updated_chat = {**chat.chat, **form_data.chat}
@@ -727,7 +653,18 @@ async def clone_chat_by_id(
             "title": form_data.title if form_data.title else f"Clone of {chat.title}",
         }
 
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
+        chat = Chats.import_chat(
+            user.id,
+            ChatImportForm(
+                **{
+                    "chat": updated_chat,
+                    "meta": chat.meta,
+                    "pinned": chat.pinned,
+                    "folder_id": chat.folder_id,
+                }
+            ),
+        )
+
         return ChatResponse(**chat.model_dump())
     else:
         raise HTTPException(
@@ -756,7 +693,17 @@ async def clone_shared_chat_by_id(id: str, user=Depends(get_verified_user)):
             "title": f"Clone of {chat.title}",
         }
 
-        chat = Chats.insert_new_chat(user.id, ChatForm(**{"chat": updated_chat}))
+        chat = Chats.import_chat(
+            user.id,
+            ChatImportForm(
+                **{
+                    "chat": updated_chat,
+                    "meta": chat.meta,
+                    "pinned": chat.pinned,
+                    "folder_id": chat.folder_id,
+                }
+            ),
+        )
         return ChatResponse(**chat.model_dump())
     else:
         raise HTTPException(
@@ -802,8 +749,10 @@ async def archive_chat_by_id(id: str, user=Depends(get_verified_user)):
 
 @router.post("/{id}/share", response_model=Optional[ChatResponse])
 async def share_chat_by_id(request: Request, id: str, user=Depends(get_verified_user)):
-    if not has_permission(
-        user.id, "chat.share", request.app.state.config.USER_PERMISSIONS
+    if (user.role != "admin") and (
+        not has_permission(
+            user.id, "chat.share", request.app.state.config.USER_PERMISSIONS
+        )
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
